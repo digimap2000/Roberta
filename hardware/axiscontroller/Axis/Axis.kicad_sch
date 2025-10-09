@@ -6,7 +6,7 @@
 	(paper "A3")
 	(title_block
 		(title "Single Axis Controller")
-		(date "2025-09-23")
+		(date "2025-10-09")
 		(rev "Alpha")
 		(company "AJS Contract Design Ltd")
 		(comment 1 "PI Pico2W MCU")
