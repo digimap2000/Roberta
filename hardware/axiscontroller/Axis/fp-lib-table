@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "AJS_Roberta")(type "KiCad")(uri "/Users/andys/Documents/ajs/ALP/projects/roberta/hardware/AJS_Roberta.pretty")(options "")(descr ""))
+)
