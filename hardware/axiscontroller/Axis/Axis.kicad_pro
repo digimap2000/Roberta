@@ -37,18 +37,18 @@
         "other_text_thickness": 0.15,
         "other_text_upright": false,
         "pads": {
-          "drill": 1.1,
-          "height": 1.7018,
-          "width": 1.7018
+          "drill": 0.5588,
+          "height": 1.0668,
+          "width": 1.0668
         },
         "silk_line_width": 0.1,
         "silk_text_italic": false,
-        "silk_text_size_h": 1.0,
-        "silk_text_size_v": 1.0,
+        "silk_text_size_h": 0.6,
+        "silk_text_size_v": 0.6,
         "silk_text_thickness": 0.1,
         "silk_text_upright": false,
         "zones": {
-          "min_clearance": 0.5
+          "min_clearance": 0.0
         }
       },
       "diff_pair_dimensions": [
@@ -122,7 +122,7 @@
       },
       "rules": {
         "max_error": 0.005,
-        "min_clearance": 0.5,
+        "min_clearance": 0.3,
         "min_connection": 0.0,
         "min_copper_edge_clearance": 0.5,
         "min_groove_width": 0.0,
@@ -135,7 +135,7 @@
         "min_text_height": 0.5,
         "min_text_thickness": 0.08,
         "min_through_hole_diameter": 0.3,
-        "min_track_width": 0.5,
+        "min_track_width": 0.2,
         "min_via_annular_width": 0.1,
         "min_via_diameter": 0.5,
         "solder_mask_to_copper_clearance": 0.0,
@@ -186,7 +186,10 @@
         }
       ],
       "track_widths": [
-        0.0
+        0.0,
+        0.2,
+        0.3,
+        1.0
       ],
       "tuning_pattern_settings": {
         "diff_pair_defaults": {
@@ -442,7 +445,7 @@
       "no_connect_dangling": "warning",
       "pin_not_connected": "error",
       "pin_not_driven": "error",
-      "pin_to_pin": "warning",
+      "pin_to_pin": "error",
       "power_pin_not_driven": "error",
       "same_local_global_label": "warning",
       "similar_label_and_power": "warning",
@@ -469,10 +472,10 @@
     "classes": [
       {
         "bus_width": 12,
-        "clearance": 0.5,
+        "clearance": 0.18,
         "diff_pair_gap": 0.25,
         "diff_pair_via_gap": 0.25,
-        "diff_pair_width": 0.2,
+        "diff_pair_width": 0.5,
         "line_style": 0,
         "microvia_diameter": 0.3,
         "microvia_drill": 0.1,
@@ -487,9 +490,9 @@
       },
       {
         "bus_width": 12,
-        "clearance": 0.5,
+        "clearance": 0.18,
         "diff_pair_gap": 0.25,
-        "diff_pair_width": 0.2,
+        "diff_pair_width": 1.0,
         "line_style": 0,
         "microvia_diameter": 0.3,
         "microvia_drill": 0.1,
@@ -598,7 +601,7 @@
           "group_by": true,
           "label": "Footprint",
           "name": "Footprint",
-          "show": false
+          "show": true
         },
         {
           "group_by": false,
@@ -640,13 +643,73 @@
           "group_by": false,
           "label": "CPC",
           "name": "CPC",
-          "show": true
+          "show": false
         },
         {
           "group_by": false,
           "label": "Part",
           "name": "Part",
-          "show": true
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Mouser Price/Stock",
+          "name": "Mouser Price/Stock",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Mouser Part Number",
+          "name": "Mouser Part Number",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Arrow Price/Stock",
+          "name": "Arrow Price/Stock",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Manufacturer_Part_Number",
+          "name": "Manufacturer_Part_Number",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Arrow Part Number",
+          "name": "Arrow Part Number",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Height",
+          "name": "Height",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Manufacturer_Name",
+          "name": "Manufacturer_Name",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Manufacturer Part Number",
+          "name": "Manufacturer Part Number",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Mouser",
+          "name": "Mouser",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Manufacturer",
+          "name": "Manufacturer",
+          "show": false
         }
       ],
       "filter_string": "",
@@ -700,6 +763,54 @@
     [
       "163c6bf3-789e-43d9-899a-74173c510f16",
       "Root"
+    ],
+    [
+      "2309bad6-82ef-43c7-a31d-e328884eb7b5",
+      "MicroController"
+    ],
+    [
+      "b6993c37-2ac4-4349-8a1d-e07fff8e1796",
+      "Power Output A"
+    ],
+    [
+      "895c04db-5291-4144-bd8b-969d335f9e84",
+      "Power Output B"
+    ],
+    [
+      "a0f61577-3194-42f5-aacc-c7120104ba33",
+      "Power Output C"
+    ],
+    [
+      "b6c42da9-93d3-44eb-96d4-0051f061509f",
+      "Opto Input 1"
+    ],
+    [
+      "685296fb-8510-42a8-9393-03459cda6985",
+      "Opto Input 2"
+    ],
+    [
+      "446629fd-f465-4799-bf48-29b0ed897221",
+      "Opto Input 3"
+    ],
+    [
+      "74ee2b17-322e-46ae-b7de-fb571ee65f81",
+      "Opto Input 4"
+    ],
+    [
+      "caeec8f7-8be4-47ff-9943-1dc2624ed50b",
+      "Line Driver 1"
+    ],
+    [
+      "c0b57a9c-32fc-4a3d-b352-2001a867fbaf",
+      "Line Driver 2"
+    ],
+    [
+      "2e81fc59-5744-4deb-a0d0-d5e19644fd85",
+      "Line Driver 3"
+    ],
+    [
+      "cc93a896-f9a1-43d7-b38e-6bc573170604",
+      "Master"
     ]
   ],
   "text_variables": {}
