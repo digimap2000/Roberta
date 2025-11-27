@@ -1,0 +1,155 @@
+<?xml version="1.0"?>
+<robot name="comau_ns16_base_shoulder_stl">
+
+  <!-- Base link -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/base_link.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="orange">
+        <color rgba="1 0.5 0 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <!-- Shoulder link -->
+  <link name="shoulder_link">
+    <visual>
+      <!-- adjust origin to match pivot in Fusion -->
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/shoulder_link.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="yellow">
+        <color rgba="1 1 0.5 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <!-- UpperArm link -->
+  <link name="upperarm_link">
+    <visual>
+      <!-- adjust origin to match pivot in Fusion -->
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/upperarm_link.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="blue">
+        <color rgba="0.5 1 1 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <!-- ForeArm link -->
+  <link name="forearm_link">
+    <visual>
+      <!-- adjust origin to match pivot in Fusion -->
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/forearm_link.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="red">
+        <color rgba="1 0 0 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <!-- WristA link -->
+  <link name="wrista_link">
+    <visual>
+      <!-- adjust origin to match pivot in Fusion -->
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wrista_link.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="purple">
+        <color rgba="1 0 1 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <!-- WristB link -->
+  <link name="wristb_link">
+    <visual>
+      <!-- adjust origin to match pivot in Fusion -->
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/wristb_link.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="green">
+        <color rgba="0 1 0 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <!-- Flange link -->
+  <link name="flange_link">
+    <visual>
+      <!-- adjust origin to match pivot in Fusion -->
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="meshes/flange_link.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="orange">
+        <color rgba="1 0.5 0.5 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <!-- Revolute joint -->
+  <joint name="shoulder_pan_joint" type="revolute">
+    <parent link="base_link"/>
+    <child link="shoulder_link"/>
+    <origin xyz="0 0 0.268" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="50" velocity="1.5" lower="-3.14" upper="3.14"/>
+  </joint>
+
+  <!-- Revolute joint -->
+  <joint name="shoulder_lift_joint" type="revolute">
+    <parent link="shoulder_link"/>
+    <child link="upperarm_link"/>
+    <origin xyz="-0.300 0.105 0.332" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="50" velocity="1.5" lower="-3.14" upper="3.14"/>
+  </joint>
+
+  <!-- Revolute joint -->
+  <joint name="elbow_joint" type="revolute">
+    <parent link="upperarm_link"/>
+    <child link="forearm_link"/>
+    <origin xyz="0 0.075 0.700" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="50" velocity="1.5" lower="-3.14" upper="3.14"/>
+  </joint>
+
+  <!-- Revolute joint -->
+  <joint name="wrist_roll_joint" type="revolute">
+    <parent link="forearm_link"/>
+    <child link="wrista_link"/>
+    <origin xyz="-0.238 -0.180 0.185" rpy="0 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit effort="50" velocity="1.5" lower="-3.14" upper="3.14"/>
+  </joint>
+
+  <!-- Revolute joint -->
+  <joint name="wrist_pitch_joint" type="revolute">
+    <parent link="wrista_link"/>
+    <child link="wristb_link"/>
+    <origin xyz="-0.386 0 -0.029" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="50" velocity="1.5" lower="-3.14" upper="3.14"/>
+  </joint>
+
+  <!-- Revolute joint -->
+  <joint name="wrist_yaw_joint" type="revolute">
+    <parent link="wristb_link"/>
+    <child link="flange_link"/>
+    <origin xyz="-0.104 0 0.029" rpy="0 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit effort="50" velocity="1.5" lower="-3.14" upper="3.14"/>
+  </joint>
+
+</robot>

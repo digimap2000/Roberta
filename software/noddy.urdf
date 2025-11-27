@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<robot name="comau_ns16_demo_rotating">
+
+  <!-- Base link -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder length="0.2" radius="0.25"/>
+      </geometry>
+      <material name="gray">
+        <color rgba="0.6 0.6 0.6 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <!-- Shoulder link -->
+  <link name="shoulder_link">
+    <visual>
+      <!-- position box above base and rotated around Z -->
+      <origin xyz="0 0 0.2" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.4 0.3 0.2"/>
+      </geometry>
+      <material name="orange">
+        <color rgba="1 0.5 0 1"/>
+      </material>
+    </visual>
+  </link>
+
+  <!-- Revolute joint -->
+  <joint name="shoulder_pan_joint" type="revolute">
+    <parent link="base_link"/>
+    <child link="shoulder_link"/>
+    <!-- pivot at top center of base -->
+    <!-- rpy rotation pre-applied (0 rad around X/Y, 45 deg around Z) -->
+    <origin xyz="0 0 0.1" rpy="0 0 0.7854"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="50" velocity="1.5" lower="-3.14" upper="3.14"/>
+  </joint>
+
+</robot>
