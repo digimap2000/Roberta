@@ -1,21 +1,37 @@
 cmake_minimum_required(VERSION 3.20)
 
-# Set your project name
-project(axiscontroller C CXX ASM)
+set(PICO_BOARD pico2_w CACHE STRING "Target board")
 
 # Initialize the Pico SDK
-# Set PICO_SDK_PATH in your environment before running cmake
+# Set PICO_SDK_PATH in your environment before running cmake.
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+
+project(axiscontroller C CXX ASM)
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 pico_sdk_init()
 
-# Add your executable
-add_executable(axiscontroller.elf main.c)
+add_compile_definitions(PLATFORM_PICO2W=1)
 
-# Enable the standard library (stdio, etc.)
-target_link_libraries(axiscontroller.elf pico_stdlib)
+add_subdirectory(app)
+add_subdirectory(platform/pico2w)
 
-# Optional: create UF2 file for flashing
-pico_add_extra_outputs(axiscontroller.elf)
+add_executable(axiscontroller)
 
-# Set the board
-set(PICO_BOARD pico2)
+target_link_libraries(axiscontroller PRIVATE
+    app
+    platform_pico2w
+    pico_stdlib
+    hardware_adc
+    hardware_gpio
+    hardware_uart
+)
+
+pico_enable_stdio_usb(axiscontroller 1)
+pico_enable_stdio_uart(axiscontroller 0)
+
+pico_add_extra_outputs(axiscontroller)
