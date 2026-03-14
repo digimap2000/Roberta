@@ -11,6 +11,8 @@ typedef enum {
     AXIS_COMMAND_SET_MOTOR_ENABLE,
     AXIS_COMMAND_SET_MAX_VELOCITY,
     AXIS_COMMAND_SET_ACCELERATION,
+    AXIS_COMMAND_SET_HOME_VELOCITY,
+    AXIS_COMMAND_SET_HOME_OFFSET,
     AXIS_COMMAND_MOVE_TO,
     AXIS_COMMAND_MOVE_BY,
     AXIS_COMMAND_HOME,
@@ -43,6 +45,8 @@ typedef struct {
     int32_t target_position_steps;
     uint32_t max_velocity_steps_s;
     uint32_t acceleration_steps_s2;
+    uint32_t home_velocity_steps_s;
+    int32_t home_offset_steps;
     uint32_t current_velocity_steps_s;
     uint32_t emitted_step_count;
     AxisLimitState limits;

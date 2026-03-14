@@ -2,6 +2,7 @@
 add_library(app STATIC
     axis_console.c
     axis_hw.c
+    axis_registers.c
     axis_service.c
     main.c
 )

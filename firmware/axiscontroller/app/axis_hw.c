@@ -21,6 +21,15 @@ static const bool k_step_active_level = false;
 static const bool k_fan_active_level = true;
 static const bool k_brake_active_level = true;
 
+static AxisOutputState g_outputs = {
+    .outputs_enabled = false,
+    .motor_enabled = false,
+    .direction = AXIS_DIRECTION_POSITIVE,
+    .step_active = false,
+    .fan_active = false,
+    .brake_active = false,
+};
+
 static void init_output_pin(uint pin, bool initial_level)
 {
     gpio_init(pin);
@@ -57,36 +66,43 @@ void axis_hw_init(void)
 
 void axis_hw_set_output_enable(bool enabled)
 {
+    g_outputs.outputs_enabled = enabled;
     gpio_put(GPIO_MOTOR_OE, level_for_enable(enabled, k_output_enable_active_level));
 }
 
 void axis_hw_set_motor_enable(bool enabled)
 {
+    g_outputs.motor_enabled = enabled;
     gpio_put(GPIO_MOTOR_ENA, level_for_enable(enabled, k_motor_enable_active_level));
 }
 
 void axis_hw_set_direction(AxisDirection direction)
 {
+    g_outputs.direction = direction;
     gpio_put(GPIO_MOTOR_DIR, direction == AXIS_DIRECTION_POSITIVE);
 }
 
 void axis_hw_step_pulse_start(void)
 {
+    g_outputs.step_active = true;
     gpio_put(GPIO_MOTOR_PUL, k_step_active_level);
 }
 
 void axis_hw_step_pulse_end(void)
 {
+    g_outputs.step_active = false;
     gpio_put(GPIO_MOTOR_PUL, !k_step_active_level);
 }
 
 void axis_hw_set_fan(bool enabled)
 {
+    g_outputs.fan_active = enabled;
     gpio_put(GPIO_FAN, level_for_enable(enabled, k_fan_active_level));
 }
 
 void axis_hw_set_brake(bool enabled)
 {
+    g_outputs.brake_active = enabled;
     gpio_put(GPIO_BRAKE, level_for_enable(enabled, k_brake_active_level));
 }
 
@@ -98,4 +114,9 @@ AxisLimitState axis_hw_read_limits(void)
         .limit_b = gpio_get(GPIO_LIMIT_B) == 0,
     };
     return limits;
+}
+
+AxisOutputState axis_hw_get_output_state(void)
+{
+    return g_outputs;
 }

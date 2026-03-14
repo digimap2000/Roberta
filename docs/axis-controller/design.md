@@ -129,3 +129,18 @@ functional-safety e-stop.
 
 When that exists, the communications watchdog should remain as an operational
 supervision feature, but hard stop behavior should move to hardware.
+
+## Proposed `v1` Firmware Slice
+
+The first implementation target should be a console-driven register-bank
+controller on a single axis.
+
+That slice should:
+
+- implement the register bank locally in firmware
+- drive the existing motion backend through register actions
+- expose register inspection and mutation through the USB console
+- defer RS485 transport until the register surface has been proven on hardware
+
+The detailed rollout and deferred items are recorded in
+[Implementation Plan](./implementation-plan.md).

@@ -11,7 +11,7 @@ Current documents:
   model.
 - `axis-controller/registers.md`: canonical 32-bit register definitions shared
   by all transports.
+- `axis-controller/implementation-plan.md`: planned firmware rollout and
+  explicitly deferred work.
 - `axis-controller/rs485-framed-protocol.md`: framed RS485 wire protocol over
   the register model.
-- `axis-controller-register-map.md`: compatibility entry point that links to
-  the split documents.

@@ -6,7 +6,7 @@ enum {
     AXIS_STEP_PULSE_WIDTH_US = 20,
     AXIS_DEFAULT_MAX_VELOCITY_STEPS_S = 400,
     AXIS_DEFAULT_ACCELERATION_STEPS_S2 = 800,
-    AXIS_HOME_VELOCITY_STEPS_S = 150,
+    AXIS_DEFAULT_HOME_VELOCITY_STEPS_S = 150,
 };
 
 typedef struct {
@@ -20,6 +20,8 @@ typedef struct {
     int32_t target_position_steps;
     uint32_t max_velocity_steps_s;
     uint32_t acceleration_steps_s2;
+    uint32_t home_velocity_steps_s;
+    int32_t home_offset_steps;
     double current_velocity_steps_s;
     double step_accumulator;
     uint64_t last_tick_us;
@@ -111,13 +113,13 @@ static bool step_would_pass_target(void)
 
 static void tick_homing(double dt_seconds, AxisLimitState limits)
 {
-    const double target_velocity = -(double)AXIS_HOME_VELOCITY_STEPS_S;
+    const double target_velocity = -(double)g_axis.home_velocity_steps_s;
     const double accel = (double)g_axis.acceleration_steps_s2;
     const double delta = accel * dt_seconds;
 
     if (limits.home) {
-        g_axis.current_position_steps = 0;
-        g_axis.target_position_steps = 0;
+        g_axis.current_position_steps = g_axis.home_offset_steps;
+        g_axis.target_position_steps = g_axis.home_offset_steps;
         g_axis.homed = true;
         stop_motion();
         return;
@@ -192,6 +194,8 @@ void axis_service_init(uint64_t now_us)
         .target_position_steps = 0,
         .max_velocity_steps_s = AXIS_DEFAULT_MAX_VELOCITY_STEPS_S,
         .acceleration_steps_s2 = AXIS_DEFAULT_ACCELERATION_STEPS_S2,
+        .home_velocity_steps_s = AXIS_DEFAULT_HOME_VELOCITY_STEPS_S,
+        .home_offset_steps = 0,
         .current_velocity_steps_s = 0.0,
         .step_accumulator = 0.0,
         .last_tick_us = now_us,
@@ -239,6 +243,17 @@ AxisResult axis_service_submit(const AxisCommand *command)
             return AXIS_RESULT_INVALID_ARGUMENT;
         }
         g_axis.acceleration_steps_s2 = command->rate;
+        return AXIS_RESULT_OK;
+
+    case AXIS_COMMAND_SET_HOME_VELOCITY:
+        if (command->rate == 0) {
+            return AXIS_RESULT_INVALID_ARGUMENT;
+        }
+        g_axis.home_velocity_steps_s = command->rate;
+        return AXIS_RESULT_OK;
+
+    case AXIS_COMMAND_SET_HOME_OFFSET:
+        g_axis.home_offset_steps = command->steps;
         return AXIS_RESULT_OK;
 
     case AXIS_COMMAND_MOVE_TO:
@@ -345,6 +360,8 @@ void axis_service_get_status(AxisStatus *status)
         .target_position_steps = g_axis.target_position_steps,
         .max_velocity_steps_s = g_axis.max_velocity_steps_s,
         .acceleration_steps_s2 = g_axis.acceleration_steps_s2,
+        .home_velocity_steps_s = g_axis.home_velocity_steps_s,
+        .home_offset_steps = g_axis.home_offset_steps,
         .current_velocity_steps_s = (uint32_t)absolute_value(g_axis.current_velocity_steps_s),
         .emitted_step_count = g_axis.emitted_step_count,
         .limits = axis_hw_read_limits(),
