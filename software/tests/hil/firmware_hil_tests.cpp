@@ -60,6 +60,11 @@ protected:
         require_ok(service_->connect(), "connect");
         require_ok(service_->clear_faults(), "clear_faults");
         require_ok(service_->enable_drive(), "enable_drive");
+        require_ok(axis_->set_limits(roberta::axis::AxisLimits{
+                       .min_steps = -1000000,
+                       .max_steps = 1000000,
+                   }),
+                   "set wide limits");
         require_ok(service_->set_motion_profile(safe_profile()), "set_motion_profile");
 
         auto snapshot = require_status("initial status");
@@ -166,6 +171,18 @@ protected:
 
 class FirmwareHilRawConsoleTests : public ::testing::Test {
 protected:
+    static constexpr std::uint32_t capability_absolute_move = 1u << 0;
+    static constexpr std::uint32_t capability_relative_move = 1u << 1;
+    static constexpr std::uint32_t capability_homing = 1u << 2;
+    static constexpr std::uint32_t capability_soft_limits = 1u << 3;
+    static constexpr std::uint32_t capability_fan = 1u << 4;
+    static constexpr std::uint32_t capability_brake = 1u << 5;
+    static constexpr std::uint32_t capability_joint_space = 1u << 6;
+    static constexpr std::uint32_t fault_soft_limit = 1u << 3;
+    static constexpr std::uint32_t status_outputs_enabled = 1u << 0;
+    static constexpr std::uint32_t status_motor_enabled = 1u << 1;
+    static constexpr std::uint32_t status_moving = 1u << 2;
+
     void SetUp() override
     {
         const auto device_path = hil_serial_port();
@@ -238,6 +255,20 @@ protected:
         const auto end = response->find_first_of(" \r\n", hex_pos);
         const auto token = response->substr(hex_pos + 2, end == std::string::npos ? std::string::npos : end - (hex_pos + 2));
         return static_cast<std::uint32_t>(std::stoul(token, nullptr, 16));
+    }
+
+    void wait_until_not_moving(std::chrono::milliseconds timeout = 10s)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+
+        while (std::chrono::steady_clock::now() < deadline) {
+            if ((read_register(roberta::core::AxisRegister::status_word) & status_moving) == 0u) {
+                return;
+            }
+            std::this_thread::sleep_for(100ms);
+        }
+
+        ADD_FAILURE() << "axis did not stop within timeout";
     }
 
     std::unique_ptr<roberta::transport::PosixTextTransport> transport_;
@@ -347,7 +378,12 @@ TEST_F(FirmwareHilRawConsoleTests, RejectsUnknownAndMalformedCommands)
 
 TEST_F(FirmwareHilRawConsoleTests, RecoversAfterOverlongConsoleLine)
 {
-    require_command_contains(std::string(220, 'x'), "unknown command", 3s);
+    const auto before = read_register(roberta::core::AxisRegister::control_word);
+    require_command_contains(
+        std::string("reg bitclear CONTROL_WORD 1") + std::string(220, ' '),
+        "line-too-long",
+        3s);
+    EXPECT_EQ(read_register(roberta::core::AxisRegister::control_word), before);
     require_command_contains("status", "status pos=");
 }
 
@@ -378,6 +414,21 @@ TEST_F(FirmwareHilRawConsoleTests, RejectsUnsupportedControlActions)
     EXPECT_NE(read_register(roberta::core::AxisRegister::fault_word), 0u);
 }
 
+TEST_F(FirmwareHilRawConsoleTests, RejectsUnsupportedControlWritesWithoutSideEffects)
+{
+    require_command_contains("reg bitclear CONTROL_WORD 2", "ok");
+    require_command_contains("reg bitclear CONTROL_WORD 1", "ok");
+    EXPECT_EQ(read_register(roberta::core::AxisRegister::control_word), 0u);
+
+    require_command_contains("reg bitset CONTROL_WORD 128", "ok");
+    require_command_contains("reg write CONTROL_WORD 1027", "not-supported");
+
+    EXPECT_EQ(read_register(roberta::core::AxisRegister::control_word), 0u);
+    const auto status = read_register(roberta::core::AxisRegister::status_word);
+    EXPECT_EQ(status & status_outputs_enabled, 0u);
+    EXPECT_EQ(status & status_motor_enabled, 0u);
+}
+
 TEST_F(FirmwareHilRawConsoleTests, RejectsMotionCommandsWhileDisabled)
 {
     require_command_contains("reg bitclear CONTROL_WORD 2", "ok");
@@ -389,6 +440,51 @@ TEST_F(FirmwareHilRawConsoleTests, RejectsMotionCommandsWhileDisabled)
     require_command_contains("reg bitclear CONTROL_WORD 2", "ok");
     require_command_contains("reg bitset CONTROL_WORD 16", "invalid-value");
     EXPECT_NE(read_register(roberta::core::AxisRegister::fault_word), 0u);
+}
+
+TEST_F(FirmwareHilRawConsoleTests, RejectsMovesPastConfiguredSoftLimits)
+{
+    require_command_contains("reg bitset CONTROL_WORD 128", "ok");
+    require_command_contains("reg write SOFT_LIMIT_MIN_STEPS -25", "ok");
+    require_command_contains("reg write SOFT_LIMIT_MAX_STEPS 25", "ok");
+    require_command_contains("reg write STAGED_RELATIVE_MOVE_STEPS 50", "ok");
+    require_command_contains("reg bitset CONTROL_WORD 8", "invalid-value");
+    EXPECT_NE(read_register(roberta::core::AxisRegister::fault_word) & fault_soft_limit, 0u);
+}
+
+TEST_F(FirmwareHilRawConsoleTests, AbortsMotionWhenSoftLimitBecomesActive)
+{
+    require_command_contains("reg bitset CONTROL_WORD 128", "ok");
+    require_command_contains("reg write SOFT_LIMIT_MIN_STEPS -1000", "ok");
+    require_command_contains("reg write SOFT_LIMIT_MAX_STEPS 1000", "ok");
+    require_command_contains("reg write STAGED_TARGET_VELOCITY_STEPS_S 50", "ok");
+    require_command_contains("reg write STAGED_TARGET_ACCEL_STEPS_S2 100", "ok");
+    require_command_contains("reg write STAGED_RELATIVE_MOVE_STEPS 200", "ok");
+    require_command_contains("reg bitset CONTROL_WORD 8", "ok");
+
+    std::this_thread::sleep_for(1200ms);
+
+    require_command_contains("reg write SOFT_LIMIT_MAX_STEPS 20", "ok");
+    wait_until_not_moving();
+
+    const auto fault_word = read_register(roberta::core::AxisRegister::fault_word);
+    const auto position = static_cast<std::int32_t>(
+        read_register(roberta::core::AxisRegister::current_position_steps));
+    EXPECT_NE(fault_word & fault_soft_limit, 0u);
+    EXPECT_LT(position, 200);
+}
+
+TEST_F(FirmwareHilRawConsoleTests, ReportsOnlyImplementedCapabilities)
+{
+    const auto capability_word = read_register(roberta::core::AxisRegister::capability_word);
+
+    EXPECT_NE(capability_word & capability_absolute_move, 0u);
+    EXPECT_NE(capability_word & capability_relative_move, 0u);
+    EXPECT_NE(capability_word & capability_homing, 0u);
+    EXPECT_NE(capability_word & capability_soft_limits, 0u);
+    EXPECT_NE(capability_word & capability_fan, 0u);
+    EXPECT_EQ(capability_word & capability_brake, 0u);
+    EXPECT_EQ(capability_word & capability_joint_space, 0u);
 }
 
 TEST_F(FirmwareHilRawConsoleTests, RejectsFutureExecuteAtTick)

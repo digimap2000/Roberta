@@ -42,6 +42,7 @@ enum {
 
 static char g_line_buffer[AXIS_CONSOLE_LINE_BUFFER_SIZE];
 static size_t g_line_length;
+static bool g_line_overflowed;
 static uint64_t g_last_status_us;
 
 static bool parse_on_off(const char *token, bool *value)
@@ -405,6 +406,7 @@ static void handle_line(char *line)
 void axis_console_init(void)
 {
     g_line_length = 0;
+    g_line_overflowed = false;
     g_last_status_us = time_us_64();
 
     printf("axiscontroller ready\r\n");
@@ -423,10 +425,16 @@ void axis_console_poll(void)
         }
 
         if (ch == '\r' || ch == '\n') {
-            g_line_buffer[g_line_length] = '\0';
             printf("\r\n");
-            handle_line(g_line_buffer);
+            if (g_line_overflowed) {
+                printf("line-too-long\r\n");
+                print_prompt();
+            } else {
+                g_line_buffer[g_line_length] = '\0';
+                handle_line(g_line_buffer);
+            }
             g_line_length = 0;
+            g_line_overflowed = false;
             continue;
         }
 
@@ -437,6 +445,8 @@ void axis_console_poll(void)
 
         if (g_line_length + 1 < sizeof(g_line_buffer)) {
             g_line_buffer[g_line_length++] = (char)ch;
+        } else {
+            g_line_overflowed = true;
         }
     }
 }

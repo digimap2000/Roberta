@@ -62,4 +62,23 @@ TEST(AxisTests, FaultClassificationSeparatesRecoverableAndNonRecoverable)
     EXPECT_EQ(roberta::axis::classify_fault(1u << 4), roberta::axis::AxisFaultCategory::non_recoverable);
 }
 
+TEST(AxisTests, ControllerAxisDeviceClearsStaleScheduleStateForImmediateMoves)
+{
+    roberta::protocol::MemoryRegisterTransport transport;
+    ASSERT_TRUE(transport.open().has_value());
+
+    roberta::axis::ControllerAxisDevice axis(transport);
+    ASSERT_TRUE(axis.connect().has_value());
+
+    ASSERT_TRUE(axis.move_by_steps(10).has_value());
+
+    const auto execute_at = transport.read_register(roberta::core::AxisRegister::execute_at_tick_us);
+    ASSERT_TRUE(execute_at.has_value());
+    EXPECT_EQ(*execute_at, 0u);
+
+    const auto duration = transport.read_register(roberta::core::AxisRegister::segment_duration_us);
+    ASSERT_TRUE(duration.has_value());
+    EXPECT_EQ(*duration, 0u);
+}
+
 } // namespace

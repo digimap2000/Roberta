@@ -110,8 +110,10 @@ namespace {
     return response;
 }
 
-[[nodiscard]] roberta::core::Result<std::string> read_line(int fd, std::chrono::milliseconds timeout)
+[[nodiscard]] roberta::core::Result<std::string> read_until_prompt(int fd, std::chrono::milliseconds timeout)
 {
+    static constexpr std::string_view prompt = "axis> ";
+
     std::string response;
     bool saw_any_byte = false;
     const auto deadline = std::chrono::steady_clock::now() + timeout;
@@ -129,12 +131,12 @@ namespace {
         if (count == 0) {
             continue;
         }
+
         saw_any_byte = true;
-        if (ch == '\n') {
-            break;
-        }
-        if (ch != '\r') {
-            response.push_back(ch);
+        response.push_back(ch);
+        if (response.size() >= prompt.size() &&
+            response.compare(response.size() - prompt.size(), prompt.size(), prompt) == 0) {
+            return response;
         }
     }
 
@@ -143,7 +145,8 @@ namespace {
             roberta::core::ErrorCode::timeout, "serial line timeout"));
     }
 
-    return response;
+    return std::unexpected(roberta::core::make_error(
+        roberta::core::ErrorCode::timeout, "serial prompt timeout"));
 }
 
 void drain_pending_input(int fd)
@@ -162,18 +165,41 @@ void drain_pending_input(int fd)
     }
 }
 
-roberta::core::Status prime_console_prompt(int fd)
+roberta::core::Status synchronize_console(int fd)
 {
     static constexpr std::string_view k_prime = "\r\n";
     const auto bytes = std::span<const std::uint8_t>(
         reinterpret_cast<const std::uint8_t*>(k_prime.data()), k_prime.size());
-    auto status = write_all(fd, bytes);
-    if (!status) {
-        return status;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(3000);
+
+    while (std::chrono::steady_clock::now() < deadline) {
+        auto status = write_all(fd, bytes);
+        if (!status) {
+            return status;
+        }
+        tcdrain(fd);
+
+        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now());
+        if (remaining <= std::chrono::milliseconds::zero()) {
+            break;
+        }
+
+        auto response = read_until_prompt(
+            fd,
+            remaining < std::chrono::milliseconds(500) ? remaining : std::chrono::milliseconds(500));
+        if (response) {
+            drain_pending_input(fd);
+            return roberta::core::ok_status();
+        }
+
+        if (response.error().code != roberta::core::ErrorCode::timeout) {
+            return std::unexpected(response.error());
+        }
     }
-    tcdrain(fd);
-    drain_pending_input(fd);
-    return roberta::core::ok_status();
+
+    return std::unexpected(roberta::core::make_error(
+        roberta::core::ErrorCode::timeout, "console prompt sync timeout"));
 }
 
 [[nodiscard]] std::string trim_prompt(std::string response)
@@ -196,6 +222,41 @@ roberta::core::Status prime_console_prompt(int fd)
     }
 
     return false;
+}
+
+[[nodiscard]] std::string normalize_console_response(std::string response)
+{
+    const std::string_view prompt = "axis> ";
+    std::string normalized;
+    std::size_t start = 0;
+
+    if (response.size() >= prompt.size() &&
+        response.compare(response.size() - prompt.size(), prompt.size(), prompt) == 0) {
+        response.erase(response.size() - prompt.size());
+    }
+
+    while (start < response.size()) {
+        const auto end = response.find_first_of("\r\n", start);
+        auto line = response.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        line = trim_prompt(std::move(line));
+        if (!is_ignorable_console_line(line)) {
+            if (!normalized.empty()) {
+                normalized.append("\n");
+            }
+            normalized.append(line);
+        }
+
+        if (end == std::string::npos) {
+            break;
+        }
+
+        start = response.find_first_not_of("\r\n", end);
+        if (start == std::string::npos) {
+            break;
+        }
+    }
+
+    return normalized;
 }
 
 } // namespace
@@ -287,7 +348,7 @@ roberta::core::Status PosixTextTransport::open()
         return status;
     }
     drain_pending_input(fd_);
-    status = prime_console_prompt(fd_);
+    status = synchronize_console(fd_);
     if (!status) {
         close();
         return status;
@@ -320,6 +381,8 @@ roberta::core::Result<std::string> PosixTextTransport::transact(const TextExchan
             roberta::core::ErrorCode::failed_precondition, "text serial transport is not open"));
     }
 
+    drain_pending_input(fd_);
+
     const auto request = exchange.request_line + "\r\n";
     const auto bytes = std::span<const std::uint8_t>(
         reinterpret_cast<const std::uint8_t*>(request.data()), request.size());
@@ -331,53 +394,26 @@ roberta::core::Result<std::string> PosixTextTransport::transact(const TextExchan
 
     tcdrain(fd_);
     const auto deadline = std::chrono::steady_clock::now() + exchange.timeout;
-    std::string collected;
     while (std::chrono::steady_clock::now() < deadline) {
-        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now());
         if (remaining <= std::chrono::milliseconds::zero()) {
             break;
         }
 
-        auto line = read_line(fd_, remaining);
-        if (!line) {
-            return std::unexpected(line.error());
+        auto response = read_until_prompt(fd_, remaining);
+        if (!response) {
+            return std::unexpected(response.error());
         }
 
-        auto trimmed = trim_prompt(std::move(*line));
-        if (is_ignorable_console_line(trimmed)) {
-            continue;
+        auto normalized = normalize_console_response(std::move(*response));
+        if (!normalized.empty()) {
+            return normalized;
         }
-
-        collected = std::move(trimmed);
-
-        auto quiet_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
-        while (std::chrono::steady_clock::now() < quiet_deadline) {
-            auto quiet_remaining = std::chrono::duration_cast<std::chrono::milliseconds>(quiet_deadline - std::chrono::steady_clock::now());
-            if (quiet_remaining <= std::chrono::milliseconds::zero()) {
-                break;
-            }
-
-            auto extra_line = read_line(fd_, quiet_remaining);
-            if (!extra_line) {
-                break;
-            }
-
-            auto extra_trimmed = trim_prompt(std::move(*extra_line));
-            if (is_ignorable_console_line(extra_trimmed)) {
-                continue;
-            }
-
-            collected.append("\n");
-            collected.append(extra_trimmed);
-            quiet_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
-        }
-
-        drain_pending_input(fd_);
-        return collected;
     }
 
     return std::unexpected(roberta::core::make_error(
-        roberta::core::ErrorCode::timeout, "serial line timeout"));
+        roberta::core::ErrorCode::timeout, "serial prompt-only response"));
 }
 
 } // namespace roberta::transport

@@ -197,11 +197,29 @@ roberta::core::Result<std::uint32_t> ConsoleRegisterTransport::parse_register_va
 
 roberta::core::Result<std::uint32_t> ConsoleRegisterTransport::read_register(roberta::core::AxisRegister reg)
 {
-    auto response = issue(std::format("reg read {}", roberta::core::register_name(reg)));
-    if (!response) {
-        return std::unexpected(response.error());
+    constexpr int max_attempts = 3;
+
+    for (int attempt = 0; attempt < max_attempts; ++attempt) {
+        auto response = issue(std::format("reg read {}", roberta::core::register_name(reg)));
+        if (!response) {
+            if (attempt + 1 == max_attempts) {
+                return std::unexpected(response.error());
+            }
+            continue;
+        }
+
+        auto value = parse_register_value(*response);
+        if (value) {
+            return value;
+        }
+
+        if (attempt + 1 == max_attempts) {
+            return std::unexpected(value.error());
+        }
     }
-    return parse_register_value(*response);
+
+    return std::unexpected(roberta::core::make_error(
+        roberta::core::ErrorCode::protocol, "console register read retries exhausted"));
 }
 
 roberta::core::Result<std::vector<RegisterValue>> ConsoleRegisterTransport::read_registers(std::span<const roberta::core::AxisRegister> regs)

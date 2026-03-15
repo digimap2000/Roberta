@@ -156,20 +156,20 @@ roberta::core::Status ControllerAxisDevice::set_limits(const AxisLimits& limits)
 
 roberta::core::Status ControllerAxisDevice::schedule_action(const ScheduledAxisAction& action)
 {
-    if (action.execute_at) {
-        auto status = transport_.write_register(
-            roberta::core::AxisRegister::execute_at_tick_us, static_cast<std::uint32_t>(action.execute_at->count()));
-        if (!status) {
-            return status;
-        }
+    auto status = transport_.write_register(
+        roberta::core::AxisRegister::execute_at_tick_us,
+        action.execute_at ? static_cast<std::uint32_t>(action.execute_at->count()) : 0u);
+    if (!status) {
+        return status;
     }
-    if (action.duration) {
-        auto status = transport_.write_register(
-            roberta::core::AxisRegister::segment_duration_us, static_cast<std::uint32_t>(action.duration->count()));
-        if (!status) {
-            return status;
-        }
+
+    status = transport_.write_register(
+        roberta::core::AxisRegister::segment_duration_us,
+        action.duration ? static_cast<std::uint32_t>(action.duration->count()) : 0u);
+    if (!status) {
+        return status;
     }
+
     return roberta::core::ok_status();
 }
 

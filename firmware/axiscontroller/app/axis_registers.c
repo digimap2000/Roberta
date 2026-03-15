@@ -138,6 +138,8 @@ enum {
     ERROR_MOVE_DISABLED = 101,
     ERROR_MOVE_NOT_HOMED = 102,
     ERROR_SERVICE_BUSY = 103,
+    ERROR_SOFT_LIMIT = 104,
+    ERROR_LIMIT_ACTIVE = 105,
 };
 
 typedef struct {
@@ -256,15 +258,71 @@ static void clear_faults(void)
     g_registers.last_error_code = 0;
 }
 
+static bool soft_limits_configured(void)
+{
+    return g_registers.soft_limit_min_steps < g_registers.soft_limit_max_steps;
+}
+
+static bool position_is_outside_soft_limits(int32_t position_steps)
+{
+    if (!soft_limits_configured()) {
+        return false;
+    }
+
+    return position_steps < g_registers.soft_limit_min_steps ||
+           position_steps > g_registers.soft_limit_max_steps;
+}
+
+static bool soft_limit_blocks_direction(int32_t position_steps, AxisDirection direction)
+{
+    if (!soft_limits_configured()) {
+        return false;
+    }
+
+    if (direction == AXIS_DIRECTION_NEGATIVE) {
+        return position_steps <= g_registers.soft_limit_min_steps;
+    }
+
+    return position_steps >= g_registers.soft_limit_max_steps;
+}
+
+static bool target_is_outside_soft_limits(int32_t target_position_steps)
+{
+    if (!soft_limits_configured()) {
+        return false;
+    }
+
+    return target_position_steps < g_registers.soft_limit_min_steps ||
+           target_position_steps > g_registers.soft_limit_max_steps;
+}
+
+static bool limit_blocks_direction(AxisLimitState limits, AxisDirection direction)
+{
+    if (direction == AXIS_DIRECTION_NEGATIVE) {
+        return limits.home || limits.limit_a;
+    }
+
+    return limits.limit_b;
+}
+
+static bool target_requires_blocked_limit(const AxisStatus *status, int32_t target_position_steps)
+{
+    if (target_position_steps == status->current_position_steps) {
+        return false;
+    }
+
+    return target_position_steps < status->current_position_steps
+        ? limit_blocks_direction(status->limits, AXIS_DIRECTION_NEGATIVE)
+        : limit_blocks_direction(status->limits, AXIS_DIRECTION_POSITIVE);
+}
+
 static uint32_t build_capability_word(void)
 {
     return CAPABILITY_ABSOLUTE_MOVE |
            CAPABILITY_RELATIVE_MOVE |
            CAPABILITY_HOMING |
            CAPABILITY_SOFT_LIMITS |
-           CAPABILITY_FAN |
-           CAPABILITY_BRAKE |
-           CAPABILITY_JOINT_SPACE;
+           CAPABILITY_FAN;
 }
 
 static uint32_t build_input_word(AxisLimitState limits)
@@ -345,10 +403,11 @@ static uint32_t build_status_word(const AxisStatus *status, AxisOutputState outp
     if (status->limits.limit_b) {
         word |= STATUS_LIMIT_B_ACTIVE;
     }
+    if (position_is_outside_soft_limits(status->current_position_steps)) {
+        word |= STATUS_SOFT_LIMIT_ACTIVE;
+    }
     if (outputs.brake_active) {
         word |= STATUS_BRAKE_APPLIED;
-    } else if (g_registers.brake_hold_enable != 0) {
-        word |= STATUS_BRAKE_RELEASED;
     }
     if (outputs.fan_active) {
         word |= STATUS_FAN_ACTIVE;
@@ -454,11 +513,90 @@ static AxisRegisterResult apply_motion_parameters(void)
 
 static bool execute_at_tick_is_supported(void)
 {
-    if (g_registers.execute_at_tick_us == 0) {
-        return true;
+    return g_registers.execute_at_tick_us == 0;
+}
+
+static AxisRegisterResult validate_motion_request(
+    const AxisStatus *status,
+    uint32_t requested_levels,
+    uint32_t action_bits)
+{
+    const bool outputs_enabled = (requested_levels & CONTROL_OUTPUT_ENABLE) != 0;
+    const bool motor_enabled = (requested_levels & CONTROL_MOTOR_ENABLE) != 0;
+    const uint32_t motion_actions =
+        action_bits & (CONTROL_MOVE_ABSOLUTE | CONTROL_MOVE_RELATIVE | CONTROL_HOME);
+    int32_t target_position_steps = status->current_position_steps;
+
+    if (motion_actions == 0) {
+        return AXIS_REGISTER_RESULT_OK;
     }
 
-    return g_registers.execute_at_tick_us <= (uint32_t)g_registers.local_tick_us;
+    if ((motion_actions & (motion_actions - 1u)) != 0) {
+        set_fault(FAULT_INVALID_COMMAND, ERROR_INVALID_WRITE);
+        return AXIS_REGISTER_RESULT_INVALID_VALUE;
+    }
+
+    if (!outputs_enabled || !motor_enabled) {
+        set_fault(FAULT_MOTION_WHILE_DISABLED, ERROR_MOVE_DISABLED);
+        return AXIS_REGISTER_RESULT_INVALID_VALUE;
+    }
+
+    if (action_bits & CONTROL_HOME) {
+        return AXIS_REGISTER_RESULT_OK;
+    }
+
+    if ((action_bits & CONTROL_MOVE_ABSOLUTE) != 0) {
+        if (!status->homed) {
+            set_fault(FAULT_MOVE_BEFORE_HOMED, ERROR_MOVE_NOT_HOMED);
+            return AXIS_REGISTER_RESULT_INVALID_VALUE;
+        }
+        target_position_steps = g_registers.staged_target_position_steps;
+    } else if ((action_bits & CONTROL_MOVE_RELATIVE) != 0) {
+        target_position_steps = status->current_position_steps + g_registers.staged_relative_move_steps;
+    }
+
+    if (target_is_outside_soft_limits(target_position_steps)) {
+        set_fault(FAULT_SOFT_LIMIT, ERROR_SOFT_LIMIT);
+        return AXIS_REGISTER_RESULT_INVALID_VALUE;
+    }
+
+    if (target_requires_blocked_limit(status, target_position_steps)) {
+        set_fault(FAULT_UNEXPECTED_LIMIT, ERROR_LIMIT_ACTIVE);
+        return AXIS_REGISTER_RESULT_INVALID_VALUE;
+    }
+
+    return AXIS_REGISTER_RESULT_OK;
+}
+
+static AxisRegisterResult validate_control_word_request(
+    const AxisStatus *status,
+    uint32_t requested_levels,
+    uint32_t action_bits)
+{
+    AxisRegisterResult result;
+
+    if ((action_bits & (CONTROL_MOVE_ABSOLUTE |
+                        CONTROL_MOVE_RELATIVE |
+                        CONTROL_HOME |
+                        CONTROL_MOVE_JOINT)) != 0 &&
+        !execute_at_tick_is_supported()) {
+        set_fault(FAULT_INVALID_COMMAND, ERROR_UNSUPPORTED);
+        return AXIS_REGISTER_RESULT_NOT_SUPPORTED;
+    }
+
+    if ((action_bits & CONTROL_MOVE_JOINT) != 0 ||
+        (action_bits & CONTROL_SAVE_CONFIG) != 0 ||
+        (action_bits & CONTROL_RELOAD_CONFIG) != 0) {
+        set_fault(FAULT_INVALID_COMMAND, ERROR_UNSUPPORTED);
+        return AXIS_REGISTER_RESULT_NOT_SUPPORTED;
+    }
+
+    result = validate_motion_request(status, requested_levels, action_bits);
+    if (result != AXIS_REGISTER_RESULT_OK) {
+        return result;
+    }
+
+    return AXIS_REGISTER_RESULT_OK;
 }
 
 static void snapshot_active_step_command(const AxisStatus *status)
@@ -479,6 +617,11 @@ static AxisRegisterResult write_control_word(uint32_t value)
     uint32_t action_bits = value & CONTROL_ACTION_MASK;
 
     axis_service_get_status(&status);
+
+    result = validate_control_word_request(&status, requested_levels, action_bits);
+    if (result != AXIS_REGISTER_RESULT_OK) {
+        return result;
+    }
 
     if ((requested_levels & CONTROL_OUTPUT_ENABLE) !=
         (g_registers.control_word_levels & CONTROL_OUTPUT_ENABLE)) {
@@ -510,30 +653,6 @@ static AxisRegisterResult write_control_word(uint32_t value)
 
     if (action_bits & CONTROL_CLEAR_FAULT) {
         clear_faults();
-    }
-
-    if ((action_bits & (CONTROL_MOVE_ABSOLUTE |
-                        CONTROL_MOVE_RELATIVE |
-                        CONTROL_HOME |
-                        CONTROL_MOVE_JOINT)) != 0 &&
-        !execute_at_tick_is_supported()) {
-        set_fault(FAULT_INVALID_COMMAND, ERROR_UNSUPPORTED);
-        return AXIS_REGISTER_RESULT_NOT_SUPPORTED;
-    }
-
-    if (action_bits & CONTROL_MOVE_JOINT) {
-        set_fault(FAULT_INVALID_COMMAND, ERROR_UNSUPPORTED);
-        return AXIS_REGISTER_RESULT_NOT_SUPPORTED;
-    }
-
-    if (action_bits & CONTROL_SAVE_CONFIG) {
-        set_fault(FAULT_INVALID_COMMAND, ERROR_UNSUPPORTED);
-        return AXIS_REGISTER_RESULT_NOT_SUPPORTED;
-    }
-
-    if (action_bits & CONTROL_RELOAD_CONFIG) {
-        set_fault(FAULT_INVALID_COMMAND, ERROR_UNSUPPORTED);
-        return AXIS_REGISTER_RESULT_NOT_SUPPORTED;
     }
 
     if ((action_bits & (CONTROL_MOVE_ABSOLUTE | CONTROL_MOVE_RELATIVE | CONTROL_HOME)) != 0) {
@@ -633,7 +752,27 @@ void axis_registers_init(uint64_t now_us)
 
 void axis_registers_tick(uint64_t now_us)
 {
+    AxisStatus status;
+
     g_registers.local_tick_us = now_us;
+
+    axis_service_get_status(&status);
+    if (status.homing) {
+        return;
+    }
+
+    if (status.moving && limit_blocks_direction(status.limits, status.direction)) {
+        (void)submit_command(&(AxisCommand){.type = AXIS_COMMAND_STOP});
+        set_fault(FAULT_UNEXPECTED_LIMIT, ERROR_LIMIT_ACTIVE);
+        g_registers.mode_word = MODE_IDLE;
+        return;
+    }
+
+    if (status.moving && soft_limit_blocks_direction(status.current_position_steps, status.direction)) {
+        (void)submit_command(&(AxisCommand){.type = AXIS_COMMAND_STOP});
+        set_fault(FAULT_SOFT_LIMIT, ERROR_SOFT_LIMIT);
+        g_registers.mode_word = MODE_IDLE;
+    }
 }
 
 AxisRegisterResult axis_registers_read(uint16_t address, uint32_t *value)
