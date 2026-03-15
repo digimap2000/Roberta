@@ -12,17 +12,20 @@ with thin frontends on top:
 - `apps/ios/`: future iOS UX application scaffold
 - `apps/embedded_linux/`: future embedded Linux UX application scaffold
 
-Build with CMake:
+Build with CMake presets:
 
 ```sh
-cmake -S software -B build/software
-cmake --build build/software
-ctest --test-dir build/software --output-on-failure
+cd software
+cmake --preset dev
+cmake --build --preset dev
+ctest --preset dev
 ```
 
 The workspace imports DTS from `/opt/dts`.
 
-Developer helper scripts live under `software/tools/dev/`.
+Developer helper scripts live under `software/tools/dev/`. With no arguments they
+use the `dev` preset; with an explicit build directory they still support
+one-off out-of-tree builds and force the Ninja generator.
 
 Useful smoke checks:
 

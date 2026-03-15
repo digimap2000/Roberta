@@ -8,7 +8,6 @@ add_executable(roberta_core_tests
 
 target_link_libraries(roberta_core_tests
     PRIVATE
-        GTest::gtest
         GTest::gtest_main
         roberta::core
 )
