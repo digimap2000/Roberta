@@ -434,7 +434,7 @@ planning: T18 add joint-space point-to-point planner skeleton
 - **Notes:**
   - what changed: added DTS and in-repo asset inventory scoped to `software/`
   - dependency choice: DTS explicitly adopted for logging, signaling, run-loop, channels, config/doc parsing, and serial discovery; Modbus remains outside DTS scope
-  - commit: _pending_
+  - commit: `e0a3447d`
   - test evidence: documentation-only inventory against live `/opt/dts` installation and current `software/` tree
 
 #### T02 — Choose build, packaging, test, and lint baseline
@@ -457,7 +457,7 @@ planning: T18 add joint-space point-to-point planner skeleton
 - **Notes:**
   - what changed: established the `software/` CMake workspace baseline, wired CTest and GoogleTest, added optional sanitizers, and added local dev scripts
   - dependency choice: CMake/CTest from the standard toolchain, GoogleTest as the first adopted third-party test framework because it is already installed locally, DTS retained as a library dependency rather than a build/test framework
-  - commit: _pending_
+  - commit: `d6fd57a2`
   - test evidence: configure/build/test flow passes locally with a real unit test target
 
 #### T03 — Establish error/result and logging conventions
@@ -478,7 +478,7 @@ planning: T18 add joint-space point-to-point planner skeleton
 - **Notes:**
   - what changed: added a common support layer for `std::expected`-based results, typed errors, injectable logging interfaces, and a DTS-backed default logger
   - dependency choice: standard library `std::expected` chosen over a custom result type, DTS adopted as the default logging backend behind a `roberta::core::Logger` interface
-  - commit: _pending_
+  - commit: `964adf02`
   - test evidence: unit tests cover error construction, failing status results, and injected logging behavior
 
 ---
