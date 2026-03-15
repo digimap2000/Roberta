@@ -1,4 +1,5 @@
 add_executable(roberta_core_tests
+    error_and_logging_tests.cpp
     runtime_tests.cpp
 )
 

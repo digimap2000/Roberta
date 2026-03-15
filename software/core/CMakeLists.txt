@@ -1,4 +1,6 @@
 add_library(roberta_core STATIC
+    src/error.cpp
+    src/logging.cpp
     src/runtime.cpp
 )
 

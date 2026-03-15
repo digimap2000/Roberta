@@ -461,7 +461,7 @@ planning: T18 add joint-space point-to-point planner skeleton
   - test evidence: configure/build/test flow passes locally with a real unit test target
 
 #### T03 — Establish error/result and logging conventions
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Prevent ad hoc error handling and logging styles.
 - **Actions:**
   - choose `expected`/result strategy
@@ -476,8 +476,10 @@ planning: T18 add joint-space point-to-point planner skeleton
   - logger injectable through interfaces
 - **Dependencies:** T01, T02
 - **Notes:**
+  - what changed: added a common support layer for `std::expected`-based results, typed errors, injectable logging interfaces, and a DTS-backed default logger
+  - dependency choice: standard library `std::expected` chosen over a custom result type, DTS adopted as the default logging backend behind a `roberta::core::Logger` interface
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: unit tests cover error construction, failing status results, and injected logging behavior
 
 ---
 
