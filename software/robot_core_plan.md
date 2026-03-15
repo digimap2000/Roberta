@@ -438,7 +438,7 @@ planning: T18 add joint-space point-to-point planner skeleton
   - test evidence: documentation-only inventory against live `/opt/dts` installation and current `software/` tree
 
 #### T02 — Choose build, packaging, test, and lint baseline
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Establish repeatable build/test/tooling.
 - **Actions:**
   - choose CMake layout
@@ -455,8 +455,10 @@ planning: T18 add joint-space point-to-point planner skeleton
   - hello-world library target and test target pass
 - **Dependencies:** T01
 - **Notes:**
+  - what changed: established the `software/` CMake workspace baseline, wired CTest and GoogleTest, added optional sanitizers, and added local dev scripts
+  - dependency choice: CMake/CTest from the standard toolchain, GoogleTest as the first adopted third-party test framework because it is already installed locally, DTS retained as a library dependency rather than a build/test framework
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: configure/build/test flow passes locally with a real unit test target
 
 #### T03 — Establish error/result and logging conventions
 - **State:** TODO
