@@ -180,13 +180,7 @@ roberta::core::Result<std::string> ConsoleRegisterTransport::issue(std::string c
 
 roberta::core::Result<std::uint32_t> ConsoleRegisterTransport::parse_register_value(std::string_view response)
 {
-    const auto equals = response.find('=');
-    if (equals == std::string_view::npos) {
-        return std::unexpected(roberta::core::make_error(
-            roberta::core::ErrorCode::protocol, "console register response missing '='"));
-    }
-
-    auto hex_pos = response.find("0x", equals);
+    const auto hex_pos = response.rfind("0x");
     if (hex_pos != std::string_view::npos) {
         std::uint32_t value = 0;
         const auto end = response.find_first_of(" \r\n", hex_pos);
@@ -198,7 +192,7 @@ roberta::core::Result<std::uint32_t> ConsoleRegisterTransport::parse_register_va
     }
 
     return std::unexpected(roberta::core::make_error(
-        roberta::core::ErrorCode::protocol, "console register response missing hex value"));
+        roberta::core::ErrorCode::protocol, "console register response missing hex value", response));
 }
 
 roberta::core::Result<std::uint32_t> ConsoleRegisterTransport::read_register(roberta::core::AxisRegister reg)

@@ -1,6 +1,7 @@
 #include <roberta/transport/serial_transport.hpp>
 
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 #include <fcntl.h>
 #include <span>
@@ -112,6 +113,7 @@ namespace {
 [[nodiscard]] roberta::core::Result<std::string> read_line(int fd, std::chrono::milliseconds timeout)
 {
     std::string response;
+    bool saw_any_byte = false;
     const auto deadline = std::chrono::steady_clock::now() + timeout;
 
     while (std::chrono::steady_clock::now() < deadline) {
@@ -127,6 +129,7 @@ namespace {
         if (count == 0) {
             continue;
         }
+        saw_any_byte = true;
         if (ch == '\n') {
             break;
         }
@@ -135,12 +138,64 @@ namespace {
         }
     }
 
-    if (response.empty()) {
+    if (!saw_any_byte) {
         return std::unexpected(roberta::core::make_error(
             roberta::core::ErrorCode::timeout, "serial line timeout"));
     }
 
     return response;
+}
+
+void drain_pending_input(int fd)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+    while (std::chrono::steady_clock::now() < deadline) {
+        std::uint8_t buffer[256];
+        const auto count = ::read(fd, buffer, sizeof(buffer));
+        if (count <= 0) {
+            if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                break;
+            }
+            usleep(1000);
+            continue;
+        }
+    }
+}
+
+roberta::core::Status prime_console_prompt(int fd)
+{
+    static constexpr std::string_view k_prime = "\r\n";
+    const auto bytes = std::span<const std::uint8_t>(
+        reinterpret_cast<const std::uint8_t*>(k_prime.data()), k_prime.size());
+    auto status = write_all(fd, bytes);
+    if (!status) {
+        return status;
+    }
+    tcdrain(fd);
+    drain_pending_input(fd);
+    return roberta::core::ok_status();
+}
+
+[[nodiscard]] std::string trim_prompt(std::string response)
+{
+    const std::string_view prompt = "axis> ";
+    if (response.rfind(prompt, 0) == 0) {
+        response.erase(0, prompt.size());
+    }
+    return response;
+}
+
+[[nodiscard]] bool is_ignorable_console_line(std::string_view line)
+{
+    if (line.empty()) {
+        return true;
+    }
+
+    if (line == "axis>" || line == "axis> ") {
+        return true;
+    }
+
+    return false;
 }
 
 } // namespace
@@ -162,7 +217,13 @@ roberta::core::Status PosixSerialTransport::open()
         return std::unexpected(roberta::core::make_error(
             roberta::core::ErrorCode::io, std::strerror(errno)));
     }
-    return configure_port();
+    auto status = configure_port();
+    if (!status) {
+        close();
+        return status;
+    }
+    drain_pending_input(fd_);
+    return roberta::core::ok_status();
 }
 
 void PosixSerialTransport::close() noexcept
@@ -220,7 +281,18 @@ roberta::core::Status PosixTextTransport::open()
         return std::unexpected(roberta::core::make_error(
             roberta::core::ErrorCode::io, std::strerror(errno)));
     }
-    return configure_port();
+    auto status = configure_port();
+    if (!status) {
+        close();
+        return status;
+    }
+    drain_pending_input(fd_);
+    status = prime_console_prompt(fd_);
+    if (!status) {
+        close();
+        return status;
+    }
+    return roberta::core::ok_status();
 }
 
 void PosixTextTransport::close() noexcept
@@ -248,7 +320,7 @@ roberta::core::Result<std::string> PosixTextTransport::transact(const TextExchan
             roberta::core::ErrorCode::failed_precondition, "text serial transport is not open"));
     }
 
-    const auto request = exchange.request_line + "\n";
+    const auto request = exchange.request_line + "\r\n";
     const auto bytes = std::span<const std::uint8_t>(
         reinterpret_cast<const std::uint8_t*>(request.data()), request.size());
 
@@ -258,7 +330,54 @@ roberta::core::Result<std::string> PosixTextTransport::transact(const TextExchan
     }
 
     tcdrain(fd_);
-    return read_line(fd_, exchange.timeout);
+    const auto deadline = std::chrono::steady_clock::now() + exchange.timeout;
+    std::string collected;
+    while (std::chrono::steady_clock::now() < deadline) {
+        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+        if (remaining <= std::chrono::milliseconds::zero()) {
+            break;
+        }
+
+        auto line = read_line(fd_, remaining);
+        if (!line) {
+            return std::unexpected(line.error());
+        }
+
+        auto trimmed = trim_prompt(std::move(*line));
+        if (is_ignorable_console_line(trimmed)) {
+            continue;
+        }
+
+        collected = std::move(trimmed);
+
+        auto quiet_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+        while (std::chrono::steady_clock::now() < quiet_deadline) {
+            auto quiet_remaining = std::chrono::duration_cast<std::chrono::milliseconds>(quiet_deadline - std::chrono::steady_clock::now());
+            if (quiet_remaining <= std::chrono::milliseconds::zero()) {
+                break;
+            }
+
+            auto extra_line = read_line(fd_, quiet_remaining);
+            if (!extra_line) {
+                break;
+            }
+
+            auto extra_trimmed = trim_prompt(std::move(*extra_line));
+            if (is_ignorable_console_line(extra_trimmed)) {
+                continue;
+            }
+
+            collected.append("\n");
+            collected.append(extra_trimmed);
+            quiet_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+        }
+
+        drain_pending_input(fd_);
+        return collected;
+    }
+
+    return std::unexpected(roberta::core::make_error(
+        roberta::core::ErrorCode::timeout, "serial line timeout"));
 }
 
 } // namespace roberta::transport

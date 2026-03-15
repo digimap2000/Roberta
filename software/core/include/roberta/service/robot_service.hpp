@@ -2,6 +2,7 @@
 
 #include <deque>
 #include <memory>
+#include <span>
 
 #include <roberta/execution/execution_engine.hpp>
 #include <roberta/motion/motion.hpp>

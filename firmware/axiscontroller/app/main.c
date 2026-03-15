@@ -21,7 +21,6 @@ int main(void)
         axis_service_tick(now_us);
         axis_registers_tick(now_us);
         axis_console_poll();
-        axis_console_report_status_if_due(now_us);
         sleep_us(50);
     }
 }

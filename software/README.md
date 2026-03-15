@@ -21,6 +21,19 @@ cmake --build --preset dev
 ctest --preset dev
 ```
 
+To build the opt-in hardware-in-the-loop firmware regression suite for a real
+Pico DUT:
+
+```sh
+cd software
+cmake --preset hil
+cmake --build --preset hil
+ROBERTA_HIL_SERIAL_PORT=/dev/cu.usbmodem101 ctest --preset hil
+```
+
+If `ROBERTA_HIL_SERIAL_PORT` is not set, the HIL tests default to
+`/dev/cu.usbmodem101` and skip themselves when that port is not present.
+
 The workspace imports DTS from `/opt/dts`.
 
 Developer helper scripts live under `software/tools/dev/`. With no arguments they
@@ -30,9 +43,12 @@ one-off out-of-tree builds and force the Ninja generator.
 Useful smoke checks:
 
 ```sh
-/tmp/roberta-software-check/apps/cli/roberta_cli --runtime
-/tmp/roberta-software-check/apps/cli/roberta_cli --registers
-/tmp/roberta-software-check/apps/cli/roberta_cli --sim-demo
+build/software/dev/apps/cli/roberta_cli --runtime
+build/software/dev/apps/cli/roberta_cli --registers
+build/software/dev/apps/cli/roberta_cli --sim-demo
+build/software/dev/apps/cli/roberta_cli axis --port /dev/cu.usbmodem1101 status
+build/software/dev/apps/cli/roberta_cli axis --port /dev/cu.usbmodem1101 enable
+build/software/dev/apps/cli/roberta_cli axis --port /dev/cu.usbmodem1101 jog 200
 ```
 
 Decision records and architecture notes live under `software/docs/`.

@@ -32,6 +32,13 @@
         "ROBERTA_ENABLE_SANITIZERS": "OFF",
         "ROBERTA_BUILD_CLI": "ON"
       }
+    },
+    {
+      "name": "hil",
+      "inherits": "dev",
+      "cacheVariables": {
+        "ROBERTA_ENABLE_HIL_TESTS": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -42,6 +49,10 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "hil",
+      "configurePreset": "hil"
     }
   ],
   "testPresets": [
@@ -57,6 +68,16 @@
       "configurePreset": "release",
       "output": {
         "outputOnFailure": true
+      }
+    },
+    {
+      "name": "hil",
+      "configurePreset": "hil",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "label": "hil"
       }
     }
   ]

@@ -20,6 +20,7 @@ option(ROBERTA_BUILD_MACOS_APP "Build the macOS UX application scaffold" OFF)
 option(ROBERTA_BUILD_IOS_APP "Build the iOS UX application scaffold" OFF)
 option(ROBERTA_BUILD_EMBEDDED_LINUX_APP "Build the embedded Linux UX application scaffold" OFF)
 option(ROBERTA_ENABLE_SANITIZERS "Enable address and undefined sanitizers in non-Release builds" ON)
+option(ROBERTA_ENABLE_HIL_TESTS "Build real-device hardware-in-the-loop tests" OFF)
 
 include(RobertaDts)
 

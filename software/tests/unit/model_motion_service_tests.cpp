@@ -3,6 +3,7 @@
 #include <roberta/model/robot_model.hpp>
 #include <roberta/motion/motion.hpp>
 #include <roberta/service/robot_service.hpp>
+#include <roberta/service/single_axis_service.hpp>
 #include <roberta/sim/simulated_axis_device.hpp>
 
 namespace {
@@ -89,6 +90,33 @@ TEST(ServiceTests, ServiceSubmitsAndCompletesJointAndCartesianMoves)
     auto cart_handle = service.move_cartesian(
         std::vector<double>{0.05, 0.02, -0.03, 0.01, 0.0, 0.02}, target_pose, std::chrono::microseconds(5000));
     ASSERT_TRUE(cart_handle.has_value());
+}
+
+TEST(ServiceTests, SingleAxisServiceProvidesHumanFriendlyOperations)
+{
+    auto axis = std::make_shared<roberta::sim::SimulatedAxisDevice>(1);
+    roberta::service::SingleAxisService service(axis);
+
+    ASSERT_TRUE(service.connect().has_value());
+    ASSERT_TRUE(service.enable_drive().has_value());
+    ASSERT_TRUE(service.set_motion_profile({.velocity_steps_per_second = 2000, .accel_steps_per_second_squared = 1500, .home_velocity_steps_per_second = 100}).has_value());
+    ASSERT_TRUE(service.jog_steps(120).has_value());
+    ASSERT_TRUE(axis->advance(std::chrono::milliseconds(100)).has_value());
+
+    auto snapshot = service.status();
+    ASSERT_TRUE(snapshot.has_value());
+    EXPECT_GT(snapshot->current_position_steps, 0);
+
+    ASSERT_TRUE(service.zero().has_value());
+    snapshot = service.status();
+    ASSERT_TRUE(snapshot.has_value());
+    EXPECT_EQ(snapshot->current_position_steps, 0);
+
+    ASSERT_TRUE(service.disable_drive().has_value());
+    snapshot = service.status();
+    ASSERT_TRUE(snapshot.has_value());
+    EXPECT_FALSE(snapshot->outputs_enabled);
+    EXPECT_FALSE(snapshot->motor_enabled);
 }
 
 } // namespace
