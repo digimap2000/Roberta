@@ -23,3 +23,13 @@ ctest --test-dir build/software --output-on-failure
 The workspace imports DTS from `/opt/dts`.
 
 Developer helper scripts live under `software/tools/dev/`.
+
+Useful smoke checks:
+
+```sh
+/tmp/roberta-software-check/apps/cli/roberta_cli --runtime
+/tmp/roberta-software-check/apps/cli/roberta_cli --registers
+/tmp/roberta-software-check/apps/cli/roberta_cli --sim-demo
+```
+
+Decision records and architecture notes live under `software/docs/`.

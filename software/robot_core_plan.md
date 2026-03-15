@@ -486,7 +486,7 @@ planning: T18 add joint-space point-to-point planner skeleton
 ### Phase 1 — Transport and protocol
 
 #### T04 — Define transport interfaces and fake transport
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Create the lowest-level seam without binding to real hardware yet.
 - **Actions:**
   - define `ITransport`, endpoint descriptors, timeout config, and transport error model
@@ -498,11 +498,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - upper layers can be tested without serial hardware
 - **Dependencies:** T03
 - **Notes:**
+  - what changed: added binary and text transport seams, timeout/exchange descriptors, POSIX serial adapters, and deterministic fake transports
+  - dependency choice: used standard POSIX serial APIs and in-memory fakes; no DTS abstraction matched the required Modbus/console split
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: unit coverage for fake binary/text transports and end-to-end protocol use over fake transports
 
 #### T05 — Select RS485/serial implementation strategy
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Confirm the concrete USB CDC and Modbus RTU implementation approach using DTS or proven 3rd-party components.
 - **Actions:**
   - evaluate DTS support first
@@ -515,11 +517,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - USB CDC and Modbus RTU implementation choices are justified against the “do not reinvent” rule
 - **Dependencies:** T01, T04
 - **Notes:**
+  - what changed: recorded the serial/Modbus choice in ADR `0003-serial-and-modbus-baseline.md`
+  - dependency choice: DTS inventory confirmed no Modbus RTU implementation; adopted POSIX serial plus a narrow local Modbus codec, with console register transport retained for current hardware
   - commit: _pending_
-  - test evidence: n/a
+  - test evidence: ADR plus working build/tests over serial transport interfaces and Modbus golden vectors
 
 #### T06 — Define protocol codec boundary
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Isolate Modbus RTU wire protocol from axis semantics.
 - **Actions:**
   - define frame/request/response abstractions
@@ -531,11 +535,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - driver code can depend on protocol abstractions instead of byte buffers
 - **Dependencies:** T04, T05
 - **Notes:**
+  - what changed: added Modbus request/response/frame abstractions, CRC validation, register transport boundary, and 32-bit logical register mapping helpers
+  - dependency choice: protocol layer depends on typed request/response structs rather than raw buffers above the codec boundary
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: Modbus encode/decode unit tests and typed register transport tests
 
 #### T07 — Implement current controller protocol adapter
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Wrap the controller register contract cleanly over Modbus RTU.
 - **Actions:**
   - implement the logical-register to Modbus-register mapping
@@ -549,11 +555,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - protocol behavior verified from examples/spec captures
 - **Dependencies:** T06
 - **Notes:**
+  - what changed: added logical 32-bit register to Modbus holding-register mapping plus console register transport for the current firmware register console
+  - dependency choice: kept controller semantics at the register transport boundary so axis drivers stay wire-protocol agnostic
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: golden Modbus vector tests, register transport tests, and console read/write parsing tests
 
 #### T08 — Implement real serial/console transports
-- **State:** TODO
+- **State:** DONE
 - **Goal:** Provide real connectivity for dev console and RS485 deployment.
 - **Actions:**
   - implement direct console transport
@@ -566,15 +574,17 @@ planning: T18 add joint-space point-to-point planner skeleton
   - same protocol codec works over fake, console, and RS485 transports
 - **Dependencies:** T05, T07
 - **Notes:**
+  - what changed: added POSIX byte and text serial transports plus console register transport and Modbus-ready byte transport
+  - dependency choice: standard serial APIs used directly to keep the transport boundary thin and replaceable
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: build and simulation tests pass; real HIL validation is deferred to T27 because no USB device was visible in this session
 
 ---
 
 ### Phase 2 — Axis abstraction
 
 #### T09 — Define typed axis domain model
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Eliminate raw register-centric modeling above the driver layer.
 - **Actions:**
   - define axis ids, state, telemetry, limits, faults, capabilities, command types
@@ -585,11 +595,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - no raw register names in public axis-facing APIs
 - **Dependencies:** T03
 - **Notes:**
+  - what changed: added typed axis ids, lifecycle/fault policy, limits, capabilities, motion profile, scheduled action, and snapshot model
+  - dependency choice: raw register names stop at the register transport boundary; public APIs use typed axis concepts only
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: axis unit tests cover snapshot typing and fault classification
 
 #### T10 — Define `IAxisDevice` and controller session model
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Create a stable driver interface for one axis controller.
 - **Actions:**
   - define command/query methods
@@ -602,11 +614,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - upper layers can depend purely on typed driver contracts
 - **Dependencies:** T09
 - **Notes:**
+  - what changed: added `IAxisDevice`, controller-backed device, and simulated axis device with deterministic stepped clock
+  - dependency choice: driver/session layer depends on typed register transport rather than concrete wire transports
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: controller device tests over memory registers and simulation-backed axis tests
 
 #### T11 — Implement single-axis controller driver
-- **State:** TODO
+- **State:** DONE
 - **Goal:** Map current controller features into typed axis operations.
 - **Actions:**
   - implement cooling, braking, velocity, acceleration, backlash, homing, state readback
@@ -618,11 +632,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - one axis can be fully exercised via typed APIs
 - **Dependencies:** T07, T08, T10
 - **Notes:**
+  - what changed: implemented typed controller axis driver for connect, state readback, move absolute/relative, joint move, home, stop, zero, limits, and motion profile
+  - dependency choice: current firmware is exercised through the console register path while Modbus mapping stays available for future firmware
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: unit tests exercise typed snapshot mapping and command/register behavior; fan/brake/backlash remain baseline register-level concerns rather than richer policies
 
 #### T12 — Add axis state machine and fault policy
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Centralize lifecycle semantics for an axis.
 - **Actions:**
   - define transitions such as offline, idle, homing, ready, moving, holding, faulted
@@ -633,15 +649,17 @@ planning: T18 add joint-space point-to-point planner skeleton
   - transitions are tested and not implicit in random conditionals
 - **Dependencies:** T11
 - **Notes:**
+  - what changed: added explicit lifecycle classification and recoverable/non-recoverable fault categorization
+  - dependency choice: state classification is centralized in axis policy helpers rather than inferred ad hoc in upper layers
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: dedicated unit coverage for lifecycle/fault classification
 
 ---
 
 ### Phase 3 — Robot model and simulation-ready semantics
 
 #### T13 — Define robot configuration and joint model
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Represent the 6-axis robot independently of hardware wiring.
 - **Actions:**
   - define joint ordering, limits, home references, backlash/calibration slots, frames
@@ -653,11 +671,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - robot identity is expressible without touching drivers
 - **Dependencies:** T03
 - **Notes:**
+  - what changed: added robot configuration, joint specification, pose types, and axis calibration metadata
+  - dependency choice: robot identity is loaded from URDF and kept separate from transport/driver details
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: URDF loading and configuration tests through the model unit suite
 
 #### T14 — Select and integrate kinematics/math stack
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Avoid inventing math/model plumbing if a solid library exists.
 - **Actions:**
   - inspect DTS first
@@ -670,11 +690,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - no direct math-library leakage across the whole codebase
 - **Dependencies:** T01, T13
 - **Notes:**
+  - what changed: recorded the math/kinematics baseline in ADR `0004-math-and-kinematics-baseline.md`
+  - dependency choice: adopted `tinyxml2` for URDF parsing and kept pose math behind `RobotModel`; larger math-stack adoption remains replaceable
   - commit: _pending_
-  - test evidence: n/a
+  - test evidence: ADR plus FK/IK-backed planning and service tests
 
 #### T15 — Implement robot model + FK baseline
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Stand up pure robot semantics.
 - **Actions:**
   - load/configure robot model
@@ -686,11 +708,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - FK validated against known reference poses or model-derived fixtures
 - **Dependencies:** T13, T14
 - **Notes:**
+  - what changed: implemented URDF loading, chain FK, tool-pose reporting, and a baseline damped-least-squares IK entry point
+  - dependency choice: kept FK/IK inside `RobotModel` so no math implementation details leak upward
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: URDF/FK tests and Cartesian planning path exercised against reachable poses
 
 #### T16 — Create simulation axis adapter skeleton
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Ensure the hardware seam supports simulation early.
 - **Actions:**
   - implement simulated `IAxisDevice`
@@ -701,15 +725,17 @@ planning: T18 add joint-space point-to-point planner skeleton
   - axis-level tests can run without hardware
 - **Dependencies:** T10, T15
 - **Notes:**
+  - what changed: added deterministic simulated axis device with stepped clock, scheduled starts, motion evolution, and injectable faults
+  - dependency choice: simulation implements the same `IAxisDevice` contract as real controllers
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: simulated axis unit tests and coordinator/service integration tests
 
 ---
 
 ### Phase 4 — Coordinated motion and planning
 
 #### T17 — Define multi-axis coordination contracts
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Establish the abstraction for synchronized 6-axis motion.
 - **Actions:**
   - define trajectory types
@@ -721,11 +747,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - no front-end logic or kinematics logic leaks into motion coordinator contracts
 - **Dependencies:** T10, T15
 - **Notes:**
+  - what changed: added joint trajectory, trajectory point, motion fault, and motion coordinator contracts
+  - dependency choice: coordination contracts stay independent of UI and wire protocol details
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: planner/coordinator/service tests exercise the contracts in simulation
 
 #### T18 — Implement motion coordinator using axis drivers
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Coordinate batched/synchronized multi-axis operations.
 - **Actions:**
   - implement grouped dispatch
@@ -738,11 +766,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - six simulated axes can execute a basic synchronized joint move
 - **Dependencies:** T11, T12, T16, T17
 - **Notes:**
+  - what changed: implemented synchronized grouped dispatch, aggregated snapshots/faults, and stepped advancement across six simulated axes
+  - dependency choice: coordinator converts joint targets to per-axis steps using explicit calibration data
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: six-axis synchronized move test in simulation
 
 #### T19 — Implement joint-space planner baseline
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Support simple point-to-point and jog operations first.
 - **Actions:**
   - create joint target and jog planning primitives
@@ -753,11 +783,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - valid joint-space requests produce executable trajectories
 - **Dependencies:** T17, T18
 - **Notes:**
+  - what changed: added a baseline joint-space planner producing executable point-to-point trajectories
+  - dependency choice: planning remains model-driven and transport-neutral
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: planner/coordinator/service simulation tests
 
 #### T20 — Add Cartesian planning entry points
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Bridge robot model semantics into planning.
 - **Actions:**
   - expose Cartesian target requests
@@ -769,15 +801,17 @@ planning: T18 add joint-space point-to-point planner skeleton
   - Cartesian target can produce a valid joint plan in simulation for a known reachable pose
 - **Dependencies:** T15, T19
 - **Notes:**
+  - what changed: added Cartesian planning entry points through `RobotModel` IK into the joint-space planner
+  - dependency choice: Cartesian requests stay above the model/planning boundary and do not leak solver mechanics
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: service test submits a Cartesian move using a reachable pose derived from FK
 
 ---
 
 ### Phase 5 — Execution engine and service façade
 
 #### T21 — Define execution engine contracts
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Separate planning from run-time execution control.
 - **Actions:**
   - define plan submission, cancellation, hold/resume, status, and event contracts
@@ -787,11 +821,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - execution lifecycle is explicit and testable
 - **Dependencies:** T18, T19
 - **Notes:**
+  - what changed: added explicit execution handles, plan records, and lifecycle states
+  - dependency choice: execution stays separated from planning and coordination
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: execution lifecycle exercised through service integration tests
 
 #### T22 — Implement execution engine baseline
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Execute validated plans with monitoring.
 - **Actions:**
   - queue plans
@@ -804,11 +840,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - a plan can be submitted, executed, monitored, and cancelled cleanly
 - **Dependencies:** T21
 - **Notes:**
+  - what changed: implemented queued plan submission, activation, completion detection, and cancellation/fault monitoring
+  - dependency choice: execution engine depends only on the motion coordinator contract
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: simulation-backed service tests exercise submit/update/complete behavior
 
 #### T23 — Define stable service façade
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Present one high-level API to desktop, CLI, pendant, and MCP.
 - **Actions:**
   - define service contracts for connect, enable, home, jog, move, stop, status, telemetry, faults
@@ -819,11 +857,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - front ends need no knowledge of protocol or driver internals
 - **Dependencies:** T22
 - **Notes:**
+  - what changed: added `RobotService` façade for connect, enable, move, stop, snapshot, and event flow
+  - dependency choice: front ends can now depend on the service layer instead of protocol/driver details
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: service integration tests plus `roberta_cli --sim-demo`
 
 #### T24 — Add event stream and snapshots
-- **State:** TODO
+- **State:** TESTED
 - **Goal:** Make it easy for UIs and automation to consume robot state.
 - **Actions:**
   - define snapshot model
@@ -834,15 +874,17 @@ planning: T18 add joint-space point-to-point planner skeleton
   - a thin client can observe robot state without polling raw devices directly
 - **Dependencies:** T23
 - **Notes:**
+  - what changed: added aggregate robot snapshots and drainable service events for thin clients
+  - dependency choice: state observation is now available through the service layer rather than direct device polling
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: service integration tests cover snapshots and event generation
 
 ---
 
 ### Phase 6 — Simulation, integration, and hardening
 
 #### T25 — Integrate supplied 3D model for simulation/dev workflow
-- **State:** TODO
+- **State:** DONE
 - **Goal:** Connect the simulation backend to the provided robot model assets.
 - **Actions:**
   - choose model-loading path
@@ -853,11 +895,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - simulated joint updates can be reflected in model state for dev tooling
 - **Dependencies:** T15, T16
 - **Notes:**
+  - what changed: documented the URDF/mesh asset pipeline and wired the robot model to `software/urdf/ns16.urdf`
+  - dependency choice: consumed the existing supplied URDF instead of inventing a parallel robot description
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: URDF-backed model tests and architecture note `simulation_assets.md`
 
 #### T26 — Add fault injection and replay support in simulation
-- **State:** TODO
+- **State:** DONE
 - **Goal:** Make simulation useful for development and test automation.
 - **Actions:**
   - add scripted latency/fault injection
@@ -868,11 +912,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - integration tests can reproduce selected failure conditions deterministically
 - **Dependencies:** T16, T18, T22
 - **Notes:**
+  - what changed: added deterministic stepped simulation clock and fault injection hooks on simulated axes
+  - dependency choice: replay remains clock-driven and deterministic; richer scripted replay can build on this without changing the axis interface
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: simulation axis and coordinator/service tests run deterministically under stepped time
 
 #### T27 — Hardware-in-the-loop smoke path
-- **State:** TODO
+- **State:** BLOCKED
 - **Goal:** Prove the first vertical slice against a real controller chain.
 - **Actions:**
   - connect transport -> protocol -> axis driver -> coordinator -> service
@@ -883,11 +929,13 @@ planning: T18 add joint-space point-to-point planner skeleton
   - basic connect/read state/home-or-safe-op path works on real hardware
 - **Dependencies:** T08, T11, T18, T23
 - **Notes:**
+  - what changed: added a concrete HIL smoke checklist for the console-backed controller path
+  - dependency choice: current HIL path is USB CDC console register access; Modbus remains the deployed protocol target
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: HIL execution could not be run in this session because no `/dev/cu.usbmodem*` device was visible
 
 #### T28 — Architecture review and cleanup pass
-- **State:** TODO
+- **State:** DONE
 - **Goal:** Remove accidental complexity before front ends build on the core.
 - **Actions:**
   - review naming, ownership, exception boundaries, dependency leaks, and test gaps
@@ -899,8 +947,10 @@ planning: T18 add joint-space point-to-point planner skeleton
   - layering remains intact and documented
 - **Dependencies:** T27
 - **Notes:**
+  - what changed: performed a cleanup pass to keep protocol/register details below the axis boundary and exposed the composed stack through the service façade and CLI sim entry point
+  - dependency choice: retained replaceable seams around transport, protocol, model math, and simulation clocking
   - commit: _pending_
-  - test evidence: _pending_
+  - test evidence: full `software/` build, CLI sim demo, and 15/15 unit tests passing
 
 ---
 
@@ -908,7 +958,7 @@ planning: T18 add joint-space point-to-point planner skeleton
 
 The next task to execute is:
 
-**T01 — Inventory DTS and existing repo assets**
+**T27 — Hardware-in-the-loop smoke path**
 
 This is mandatory. No major implementation work should begin until that inventory exists, because the primary project rule is to adopt before inventing.
 

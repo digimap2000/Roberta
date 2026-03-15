@@ -46,3 +46,11 @@ set_target_properties(
         INTERFACE_INCLUDE_DIRECTORIES "${ROBERTA_DTS_INCLUDE_DIR}"
         INTERFACE_LINK_LIBRARIES "fmt::fmt;spdlog::spdlog"
 )
+
+find_package(tinyxml2 CONFIG QUIET)
+if(NOT tinyxml2_FOUND AND EXISTS "/opt/homebrew/opt/tinyxml2/lib/cmake/tinyxml2/tinyxml2-config.cmake")
+    find_package(tinyxml2 CONFIG REQUIRED PATHS "/opt/homebrew/opt/tinyxml2/lib/cmake/tinyxml2" NO_DEFAULT_PATH)
+endif()
+if(NOT tinyxml2_FOUND)
+    find_package(tinyxml2 CONFIG REQUIRED)
+endif()

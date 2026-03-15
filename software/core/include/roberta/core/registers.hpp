@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
+#include <string_view>
 #include <type_traits>
 
 namespace roberta::core {
@@ -103,6 +105,10 @@ enum class FaultWord : std::uint32_t {
     brake_interlock_violation = 1u << 6,
     motion_aborted = 1u << 7,
 };
+
+[[nodiscard]] std::string_view register_name(AxisRegister value) noexcept;
+[[nodiscard]] bool parse_axis_register(std::string_view name, AxisRegister& out) noexcept;
+[[nodiscard]] std::span<const AxisRegister> all_axis_registers() noexcept;
 
 [[nodiscard]] constexpr bool has_flag(std::uint32_t value, ControlWord flag) noexcept
 {
