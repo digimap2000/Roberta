@@ -8,6 +8,8 @@ logic can be built in two modes:
 
 Both targets load the STL meshes under `software/urdf/meshes`, apply the robot
 joint hierarchy, and render the assembled model through the same pendant code.
+Bundled UI fonts live under `assets/fonts/` and currently use Geist Regular and
+Geist Mono Regular.
 
 ## Dependencies
 
@@ -69,8 +71,8 @@ build/software/pendant-embedded-linux-aarch64-docker/apps/pendant/roberta_pendan
 ```
 
 The build also copies the `urdf/` directory next to the binary, so deploy the
-binary together with that sibling `urdf` folder or set `ROBERTA_ASSET_ROOT` on
-the target device.
+binary together with the sibling `urdf` and `assets` folders or set
+`ROBERTA_ASSET_ROOT` and `ROBERTA_PENDANT_ASSET_ROOT` on the target device.
 
 To run the same steps manually:
 

@@ -6,6 +6,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
 
 set(ROBERTA_PENDANT_SOURCES
+    src/text_renderer.cpp
     src/main.cpp
     src/mesh_renderer.cpp
     src/robot_view.cpp
@@ -19,6 +20,9 @@ function(roberta_pendant_copy_assets target_name)
         COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${CMAKE_SOURCE_DIR}/urdf"
                 "$<TARGET_FILE_DIR:${target_name}>/urdf"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+                "$<TARGET_FILE_DIR:${target_name}>/assets"
     )
 endfunction()
 
@@ -57,6 +61,7 @@ if(ROBERTA_BUILD_PENDANT_EMBEDDED_LINUX)
 
     target_include_directories(roberta_pendant_embedded_linux
         PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
             ${ROBERTA_PENDANT_GLES_INCLUDE_DIR}
     )
 
@@ -92,6 +97,11 @@ if(ROBERTA_BUILD_PENDANT_MACOS_DEV)
             roberta::project_warnings
             PkgConfig::SDL2
             ${ROBERTA_PENDANT_OPENGL_LIBRARY}
+    )
+
+    target_include_directories(roberta_pendant_macos_dev
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
     )
 
     roberta_pendant_copy_assets(roberta_pendant_macos_dev)

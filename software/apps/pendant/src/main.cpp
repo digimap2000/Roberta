@@ -1,5 +1,6 @@
 #include "mesh_renderer.hpp"
 #include "robot_view.hpp"
+#include "text_renderer.hpp"
 
 #include <SDL.h>
 
@@ -40,6 +41,53 @@ namespace {
 #else
     return "Roberta Pendant";
 #endif
+}
+
+void draw_overlay_text(roberta::pendant::TextRenderer& text_renderer)
+{
+    using roberta::pendant::Color;
+    using roberta::pendant::FontFace;
+    using roberta::pendant::TextStyle;
+
+    const TextStyle title_style{
+        .font = FontFace::sans,
+        .pixel_height = 28.0F,
+        .line_spacing = 1.1F,
+        .color = Color{0.95F, 0.97F, 1.0F, 0.94F},
+    };
+    const TextStyle detail_style{
+        .font = FontFace::mono,
+        .pixel_height = 16.0F,
+        .line_spacing = 1.25F,
+        .color = Color{0.84F, 0.89F, 0.96F, 0.88F},
+    };
+    const TextStyle shadow_style{
+        .font = FontFace::sans,
+        .pixel_height = title_style.pixel_height,
+        .line_spacing = title_style.line_spacing,
+        .color = Color{0.02F, 0.03F, 0.04F, 0.72F},
+    };
+    const TextStyle detail_shadow_style{
+        .font = FontFace::mono,
+        .pixel_height = detail_style.pixel_height,
+        .line_spacing = detail_style.line_spacing,
+        .color = Color{0.02F, 0.03F, 0.04F, 0.58F},
+    };
+
+    text_renderer.draw_text("Roberta Pendant", 24.0F + 2.0F, 20.0F + 2.0F, shadow_style);
+    text_renderer.draw_text("Roberta Pendant", 24.0F, 20.0F, title_style);
+
+    const auto renderer_line = std::string("Renderer: ") + pendant_renderer_label();
+    text_renderer.draw_text(renderer_line, 24.0F + 1.0F, 56.0F + 1.0F, detail_shadow_style);
+    text_renderer.draw_text(renderer_line, 24.0F, 56.0F, detail_style);
+
+    text_renderer.draw_text("Fonts: Geist Regular | Geist Mono Regular", 24.0F + 1.0F, 78.0F + 1.0F,
+                            detail_shadow_style);
+    text_renderer.draw_text("Fonts: Geist Regular | Geist Mono Regular", 24.0F, 78.0F, detail_style);
+
+    text_renderer.draw_text("Keys: ARROWS/KP4 KP6 KP8 KP2  PERIOD  MINUS  SPACE  R  ESC", 24.0F + 1.0F,
+                            100.0F + 1.0F, detail_shadow_style);
+    text_renderer.draw_text("Keys: ARROWS/KP4 KP6 KP8 KP2  PERIOD  MINUS  SPACE  R  ESC", 24.0F, 100.0F, detail_style);
 }
 
 class SdlSession final {
@@ -160,6 +208,7 @@ int main()
 
         roberta::pendant::MeshRenderer renderer;
         roberta::pendant::RobotView robot_view(renderer);
+        roberta::pendant::TextRenderer text_renderer;
 
         auto previous_tick = std::chrono::steady_clock::now();
         bool running = true;
@@ -201,6 +250,8 @@ int main()
             renderer.set_viewport(drawable_width, drawable_height);
             renderer.begin_frame(roberta::pendant::Vec4{0.04F, 0.05F, 0.07F, 1.0F});
             robot_view.draw(renderer, drawable_width, drawable_height);
+            text_renderer.set_viewport(drawable_width, drawable_height);
+            draw_overlay_text(text_renderer);
 
             SDL_GL_SwapWindow(window.get());
         }
