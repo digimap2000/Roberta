@@ -16,13 +16,24 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 option(ROBERTA_BUILD_CLI "Build the CLI developer console" ON)
-option(ROBERTA_BUILD_MACOS_APP "Build the macOS UX application scaffold" OFF)
+option(ROBERTA_BUILD_CORE "Build the shared C++ core library" ON)
 option(ROBERTA_BUILD_IOS_APP "Build the iOS UX application scaffold" OFF)
-option(ROBERTA_BUILD_EMBEDDED_LINUX_APP "Build the embedded Linux UX application scaffold" OFF)
+option(ROBERTA_BUILD_PENDANT_EMBEDDED_LINUX "Build the pendant application for embedded Linux" OFF)
+option(ROBERTA_BUILD_PENDANT_MACOS_DEV "Build the pendant macOS development runner" OFF)
 option(ROBERTA_ENABLE_SANITIZERS "Enable address and undefined sanitizers in non-Release builds" ON)
 option(ROBERTA_ENABLE_HIL_TESTS "Build real-device hardware-in-the-loop tests" OFF)
 
-include(RobertaDts)
+if(ROBERTA_BUILD_CLI AND NOT ROBERTA_BUILD_CORE)
+    message(FATAL_ERROR "ROBERTA_BUILD_CLI requires ROBERTA_BUILD_CORE=ON")
+endif()
+
+if(BUILD_TESTING AND NOT ROBERTA_BUILD_CORE)
+    message(FATAL_ERROR "BUILD_TESTING requires ROBERTA_BUILD_CORE=ON")
+endif()
+
+if(ROBERTA_BUILD_CORE)
+    include(RobertaDts)
+endif()
 
 add_library(roberta_project_options INTERFACE)
 add_library(roberta::project_options ALIAS roberta_project_options)
@@ -45,7 +56,9 @@ else()
     target_compile_options(roberta_project_warnings INTERFACE -Wall -Wextra -Wpedantic)
 endif()
 
-add_subdirectory(core)
+if(ROBERTA_BUILD_CORE)
+    add_subdirectory(core)
+endif()
 add_subdirectory(apps)
 
 if(BUILD_TESTING)

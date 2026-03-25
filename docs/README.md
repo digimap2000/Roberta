@@ -5,6 +5,8 @@ implementation moves around.
 
 Current documents:
 
+- `comau-ns16/README.md`: scaffold for Comau NS16 technical specifications,
+  reverse-engineered findings, and touch pendant notes.
 - `axis-controller/README.md`: index for the split axis-controller
   specification.
 - `axis-controller/design.md`: controller behavior, synchronization, and safety

@@ -8,9 +8,11 @@ with thin frontends on top:
 - `core/`: transport-agnostic logic, typed register definitions, and shared
   runtime helpers
 - `apps/cli/`: CLI developer console and dogfooding entrypoint
-- `apps/macos/`: future macOS UX application scaffold
+- `apps/macos/`: Roberta desktop shell client built on the shared
+  `@yourorg/app-shell` package
 - `apps/ios/`: future iOS UX application scaffold
-- `apps/embedded_linux/`: future embedded Linux UX application scaffold
+- `apps/pendant/`: pendant application with embedded Linux and macOS dev runners
+- `cmake/toolchains/`: host and cross-compilation toolchain definitions
 
 Build with CMake presets:
 
@@ -49,6 +51,30 @@ build/software/dev/apps/cli/roberta_cli --sim-demo
 build/software/dev/apps/cli/roberta_cli axis --port /dev/cu.usbmodem1101 status
 build/software/dev/apps/cli/roberta_cli axis --port /dev/cu.usbmodem1101 enable
 build/software/dev/apps/cli/roberta_cli axis --port /dev/cu.usbmodem1101 jog 200
+```
+
+The macOS shell client uses the Node toolchain directly instead of the CMake
+workspace:
+
+```sh
+cd apps/macos
+pnpm install
+pnpm dev
+```
+
+To run the pendant locally on macOS:
+
+```sh
+cd software
+cmake --preset pendant-macos-dev
+cmake --build --preset pendant-macos-dev
+./../build/software/pendant-macos-dev/apps/pendant/roberta_pendant_macos_dev
+```
+
+To cross-compile the pendant for embedded Linux `aarch64` with Docker:
+
+```sh
+software/apps/pendant/docker/cross-build.sh
 ```
 
 Decision records and architecture notes live under `software/docs/`.

@@ -1,0 +1,16 @@
+[package]
+name = "roberta_macos_app"
+version = "0.1.0"
+description = "Roberta macOS desktop host"
+edition = "2021"
+build = "build.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.5.2", features = [] }
+
+[dependencies]
+chrono = { version = "0.4.42", default-features = false, features = ["clock"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serialport = "4.8.1"
+tauri = { version = "2.9.2", features = [] }
+

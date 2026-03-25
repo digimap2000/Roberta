@@ -21,6 +21,8 @@ add_library(roberta_core STATIC
 
 add_library(roberta::core ALIAS roberta_core)
 
+set_target_properties(roberta_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 target_include_directories(roberta_core
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -32,4 +34,18 @@ target_link_libraries(roberta_core
         roberta::project_options
         roberta::project_warnings
         tinyxml2::tinyxml2
+)
+
+add_library(roberta_desktop_ffi SHARED
+    src/ffi/axis_client.cpp
+)
+
+target_include_directories(roberta_desktop_ffi
+    PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+
+target_link_libraries(roberta_desktop_ffi
+    PRIVATE
+        roberta::core
 )

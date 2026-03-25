@@ -39,6 +39,38 @@
       "cacheVariables": {
         "ROBERTA_ENABLE_HIL_TESTS": "ON"
       }
+    },
+    {
+      "name": "pendant-macos-dev",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ROBERTA_ENABLE_SANITIZERS": "ON",
+        "ROBERTA_BUILD_CORE": "OFF",
+        "ROBERTA_BUILD_CLI": "OFF",
+        "ROBERTA_BUILD_IOS_APP": "OFF",
+        "ROBERTA_BUILD_PENDANT_MACOS_DEV": "ON",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+    {
+      "name": "pendant-embedded-linux-aarch64",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/linux-aarch64-debian-trixie.cmake",
+        "ROBERTA_ENABLE_SANITIZERS": "OFF",
+        "ROBERTA_BUILD_CORE": "OFF",
+        "ROBERTA_BUILD_CLI": "OFF",
+        "ROBERTA_BUILD_IOS_APP": "OFF",
+        "ROBERTA_BUILD_PENDANT_EMBEDDED_LINUX": "ON",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+    {
+      "name": "pendant-embedded-linux-aarch64-docker",
+      "inherits": "pendant-embedded-linux-aarch64",
+      "binaryDir": "${sourceDir}/../build/software/pendant-embedded-linux-aarch64-docker"
     }
   ],
   "buildPresets": [
@@ -53,6 +85,27 @@
     {
       "name": "hil",
       "configurePreset": "hil"
+    },
+    {
+      "name": "pendant-macos-dev",
+      "configurePreset": "pendant-macos-dev",
+      "targets": [
+        "roberta_pendant_macos_dev"
+      ]
+    },
+    {
+      "name": "pendant-embedded-linux-aarch64",
+      "configurePreset": "pendant-embedded-linux-aarch64",
+      "targets": [
+        "roberta_pendant_embedded_linux"
+      ]
+    },
+    {
+      "name": "pendant-embedded-linux-aarch64-docker",
+      "configurePreset": "pendant-embedded-linux-aarch64-docker",
+      "targets": [
+        "roberta_pendant_embedded_linux"
+      ]
     }
   ],
   "testPresets": [

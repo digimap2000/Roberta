@@ -191,7 +191,7 @@ software/
     /cli
     /macos
     /ios
-    /embedded_linux
+    /pendant
   /tests
     /unit
     /integration
