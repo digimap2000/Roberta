@@ -1,0 +1,4 @@
+(version 1)
+(rule "FinePitchZone_Relax_Clearance"
+  (constraint clearance (min 0.18mm))
+  (condition "A.insideArea('FinePitchZone') || B.insideArea('FinePitchZone')"))

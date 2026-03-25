@@ -1,0 +1,207 @@
+(footprint "IRLR8726TRPBF"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(descr "D-Pak (TO-252AA)_2023-5")
+	(tags "MOSFET (N-Channel)")
+	(property "Reference" "Q**"
+		(at 0 0 0)
+		(layer "F.SilkS")
+		(uuid "6a4c8dfe-5a69-4dd2-9af5-46a9f1446208")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.254)
+			)
+		)
+	)
+	(property "Value" "IRLR8726TRPBF"
+		(at 0 0 0)
+		(layer "F.SilkS")
+		(hide yes)
+		(uuid "50ebdcbe-a829-4835-8d44-776bd088a49a")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.254)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "41af04e4-0d96-4c4e-bf23-6dda35b0f2d5")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "482be10d-06d0-413c-a895-043aa7423b4f")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr smd)
+	(fp_line
+		(start -3.3 -4.28)
+		(end -3.3 1.82)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "d215098b-dd03-431b-9451-cfcb47eedd7e")
+	)
+	(fp_line
+		(start -3.3 1.82)
+		(end 3.3 1.82)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "44653bc9-1dcf-410e-9dd3-455a4cd6fbd0")
+	)
+	(fp_line
+		(start 3.3 1.82)
+		(end 3.3 -4.28)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "7838c6d2-207b-49fe-bb9f-5c81065131f0")
+	)
+	(fp_line
+		(start -3.429 -5.715)
+		(end 3.429 -5.715)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "e751bfe8-0b52-46cf-af4b-3072f85ce3b5")
+	)
+	(fp_line
+		(start -3.429 5.842)
+		(end -3.429 -5.715)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "251a84d2-e812-40ab-9ee2-0f2696ca1a94")
+	)
+	(fp_line
+		(start 3.429 -5.715)
+		(end 3.429 5.842)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "82fdb913-8f67-44a5-a3e4-423bdb6644ed")
+	)
+	(fp_line
+		(start 3.429 5.842)
+		(end -3.429 5.842)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+		(uuid "088ce364-391a-4bd1-9a8e-ac5ea15618e0")
+	)
+	(fp_line
+		(start -3.3 -4.28)
+		(end 3.3 -4.28)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "827967d1-e5d2-4b5e-addd-ae5c644136ab")
+	)
+	(fp_line
+		(start -3.3 1.82)
+		(end -3.3 -4.28)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "74bc1fd7-0fb5-4cdf-9fdf-8eed297b3d2d")
+	)
+	(fp_line
+		(start 3.3 -4.28)
+		(end 3.3 1.82)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "140079ae-d79a-43da-bd14-2031b9594b72")
+	)
+	(fp_line
+		(start 3.3 1.82)
+		(end -3.3 1.82)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "36367443-3594-4c5c-b8b9-7f89ea95ab09")
+	)
+	(fp_text user "${REFERENCE}"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(uuid "946d950f-7d45-444e-8958-e6083ab4f5fb")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.254)
+			)
+		)
+	)
+	(pad "1" smd rect
+		(at -2.28 4.2)
+		(size 1.2 2.2)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "8e348d7a-4b5a-4588-a555-6e0860fdfe0f")
+	)
+	(pad "2" smd rect
+		(at 0 -2.1)
+		(size 5.8 6.4)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "5daab4a7-83ed-43e7-85f7-651e04b80122")
+	)
+	(pad "3" smd rect
+		(at 2.28 4.2)
+		(size 1.2 2.2)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "80376e68-4120-4bf1-8088-b7b391eabd0e")
+	)
+	(embedded_fonts no)
+	(model "/Users/andys/Documents/ajs/ALP/projects/roberta/hardware/AJS_Roberta.pretty/IRLR8726TRPBF.step"
+		(offset
+			(xyz 0 0 0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz -90 -0 -90)
+		)
+	)
+)
