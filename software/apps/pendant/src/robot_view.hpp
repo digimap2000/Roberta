@@ -24,7 +24,7 @@ public:
 private:
     struct RobotLink final {
         MeshRenderer::GpuMesh mesh;
-        Vec4 color;
+        MeshRenderer::Material material;
         int parent_index;
         Vec3 joint_origin;
         Vec3 joint_axis;

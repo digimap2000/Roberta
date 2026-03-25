@@ -6,10 +6,11 @@ logic can be built in two modes:
 - embedded Linux pendant target for the real device
 - macOS development runner for local iteration in an SDL window
 
-Both targets load the STL meshes under `software/urdf/meshes`, apply the robot
+Both targets load the robot meshes under `software/urdf/meshes`, apply the
 joint hierarchy, and render the assembled model through the same pendant code.
-Bundled UI fonts live under `assets/fonts/` and currently use Geist Regular and
-Geist Mono Regular.
+The pendant loader prefers preprocessed `.rmesh` assets when present and falls
+back to the source STL files otherwise. Bundled UI fonts live under
+`assets/fonts/` and currently use Geist Regular and Geist Mono Regular.
 
 ## Dependencies
 
@@ -42,6 +43,12 @@ cd software
 cmake --preset pendant-macos-dev
 cmake --build --preset pendant-macos-dev
 ../build/software/pendant-macos-dev/apps/pendant/roberta_pendant_macos_dev
+```
+
+To regenerate the optimized robot meshes after changing the STL assets:
+
+```bash
+python3 software/apps/pendant/tools/preprocess_meshes.py software/urdf/meshes
 ```
 
 ## Build For Embedded Linux

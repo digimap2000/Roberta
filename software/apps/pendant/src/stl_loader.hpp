@@ -10,6 +10,8 @@ namespace roberta::pendant {
 struct MeshVertex final {
     Vec3 position;
     Vec3 normal;
+    float surface_variation;
+    float edge_factor;
 };
 
 struct MeshData final {

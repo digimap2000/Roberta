@@ -14,36 +14,69 @@ namespace {
 constexpr const char* k_vertex_shader = R"(
 attribute vec3 a_position;
 attribute vec3 a_normal;
+attribute vec2 a_surface_data;
 
 uniform mat4 u_view_projection;
 uniform mat4 u_model;
 
 varying vec3 v_normal;
+varying vec3 v_world_position;
+varying vec2 v_surface_data;
 
 void main()
 {
     vec4 world_position = u_model * vec4(a_position, 1.0);
     gl_Position = u_view_projection * world_position;
     v_normal = mat3(u_model) * a_normal;
+    v_world_position = world_position.xyz;
+    v_surface_data = a_surface_data;
 }
 )";
 
 constexpr const char* k_fragment_shader = R"(
 precision mediump float;
 
-uniform vec4 u_color;
+uniform vec4 u_base_color;
+uniform vec4 u_detail_color;
+uniform vec4 u_material_response;
 uniform vec3 u_light_direction;
+uniform vec3 u_camera_position;
 
 varying vec3 v_normal;
+varying vec3 v_world_position;
+varying vec2 v_surface_data;
 
 void main()
 {
     vec3 normal = normalize(v_normal);
-    float diffuse = max(dot(normal, normalize(-u_light_direction)), 0.0);
-    float ambient = 0.25;
-    float rim = pow(1.0 - max(normal.z, 0.0), 2.0) * 0.15;
-    vec3 lit = u_color.rgb * (ambient + (diffuse * 0.75) + rim);
-    gl_FragColor = vec4(lit, u_color.a);
+    vec3 key_direction = normalize(-u_light_direction);
+    vec3 view_direction = normalize(u_camera_position - v_world_position);
+    vec3 fill_direction = normalize(vec3(-key_direction.y * 0.55, key_direction.x * 0.55, 0.45));
+    vec3 half_vector = normalize(key_direction + view_direction);
+
+    float roughness = clamp(u_material_response.x, 0.08, 1.0);
+    float specular_strength = u_material_response.y;
+    float variation_strength = u_material_response.z;
+    float edge_strength = u_material_response.w;
+    float surface_variation = ((v_surface_data.x * 2.0) - 1.0) * variation_strength;
+    float edge_mask = clamp(v_surface_data.y * edge_strength, 0.0, 1.0);
+
+    vec3 albedo = clamp(u_base_color.rgb * (1.0 + surface_variation), 0.0, 1.0);
+    albedo = mix(albedo, u_detail_color.rgb, edge_mask * 0.22);
+
+    float key = max(dot(normal, key_direction), 0.0);
+    float fill = max(dot(normal, fill_direction), 0.0);
+    float hemisphere = mix(0.08, 0.22, clamp((normal.z * 0.5) + 0.5, 0.0, 1.0));
+    float rim = pow(1.0 - max(dot(normal, view_direction), 0.0), mix(4.4, 2.8, roughness))
+                * (0.08 + edge_mask + (0.20 * (1.0 - key)));
+    float specular = pow(max(dot(normal, half_vector), 0.0), mix(48.0, 10.0, roughness))
+                     * specular_strength * (0.10 + (0.90 * key));
+
+    vec3 base = albedo * (hemisphere + (key * 0.78) + (fill * 0.14));
+    vec3 lit = base + (u_detail_color.rgb * ((fill * 0.05) + (rim * 0.22) + (edge_mask * 0.10)))
+               + (mix(vec3(0.18, 0.19, 0.20), u_detail_color.rgb, 0.45) * specular);
+    lit = min(lit, vec3(1.0));
+    gl_FragColor = vec4(lit, u_base_color.a);
 }
 )";
 #else
@@ -52,36 +85,69 @@ constexpr const char* k_vertex_shader = R"(
 
 attribute vec3 a_position;
 attribute vec3 a_normal;
+attribute vec2 a_surface_data;
 
 uniform mat4 u_view_projection;
 uniform mat4 u_model;
 
 varying vec3 v_normal;
+varying vec3 v_world_position;
+varying vec2 v_surface_data;
 
 void main()
 {
     vec4 world_position = u_model * vec4(a_position, 1.0);
     gl_Position = u_view_projection * world_position;
     v_normal = mat3(u_model) * a_normal;
+    v_world_position = world_position.xyz;
+    v_surface_data = a_surface_data;
 }
 )";
 
 constexpr const char* k_fragment_shader = R"(
 #version 120
 
-uniform vec4 u_color;
+uniform vec4 u_base_color;
+uniform vec4 u_detail_color;
+uniform vec4 u_material_response;
 uniform vec3 u_light_direction;
+uniform vec3 u_camera_position;
 
 varying vec3 v_normal;
+varying vec3 v_world_position;
+varying vec2 v_surface_data;
 
 void main()
 {
     vec3 normal = normalize(v_normal);
-    float diffuse = max(dot(normal, normalize(-u_light_direction)), 0.0);
-    float ambient = 0.25;
-    float rim = pow(1.0 - max(normal.z, 0.0), 2.0) * 0.15;
-    vec3 lit = u_color.rgb * (ambient + (diffuse * 0.75) + rim);
-    gl_FragColor = vec4(lit, u_color.a);
+    vec3 key_direction = normalize(-u_light_direction);
+    vec3 view_direction = normalize(u_camera_position - v_world_position);
+    vec3 fill_direction = normalize(vec3(-key_direction.y * 0.55, key_direction.x * 0.55, 0.45));
+    vec3 half_vector = normalize(key_direction + view_direction);
+
+    float roughness = clamp(u_material_response.x, 0.08, 1.0);
+    float specular_strength = u_material_response.y;
+    float variation_strength = u_material_response.z;
+    float edge_strength = u_material_response.w;
+    float surface_variation = ((v_surface_data.x * 2.0) - 1.0) * variation_strength;
+    float edge_mask = clamp(v_surface_data.y * edge_strength, 0.0, 1.0);
+
+    vec3 albedo = clamp(u_base_color.rgb * (1.0 + surface_variation), 0.0, 1.0);
+    albedo = mix(albedo, u_detail_color.rgb, edge_mask * 0.22);
+
+    float key = max(dot(normal, key_direction), 0.0);
+    float fill = max(dot(normal, fill_direction), 0.0);
+    float hemisphere = mix(0.08, 0.22, clamp((normal.z * 0.5) + 0.5, 0.0, 1.0));
+    float rim = pow(1.0 - max(dot(normal, view_direction), 0.0), mix(4.4, 2.8, roughness))
+                * (0.08 + edge_mask + (0.20 * (1.0 - key)));
+    float specular = pow(max(dot(normal, half_vector), 0.0), mix(48.0, 10.0, roughness))
+                     * specular_strength * (0.10 + (0.90 * key));
+
+    vec3 base = albedo * (hemisphere + (key * 0.78) + (fill * 0.14));
+    vec3 lit = base + (u_detail_color.rgb * ((fill * 0.05) + (rim * 0.22) + (edge_mask * 0.10)))
+               + (mix(vec3(0.18, 0.19, 0.20), u_detail_color.rgb, 0.45) * specular);
+    lit = min(lit, vec3(1.0));
+    gl_FragColor = vec4(lit, u_base_color.a);
 }
 )";
 #endif
@@ -122,6 +188,7 @@ void main()
     glAttachShader(program, fragment_shader);
     glBindAttribLocation(program, 0, "a_position");
     glBindAttribLocation(program, 1, "a_normal");
+    glBindAttribLocation(program, 2, "a_surface_data");
     glLinkProgram(program);
 
     GLint linked = 0;
@@ -159,10 +226,14 @@ MeshRenderer::MeshRenderer()
 
     view_projection_uniform_ = glGetUniformLocation(program_, "u_view_projection");
     model_uniform_ = glGetUniformLocation(program_, "u_model");
-    color_uniform_ = glGetUniformLocation(program_, "u_color");
+    base_color_uniform_ = glGetUniformLocation(program_, "u_base_color");
+    detail_color_uniform_ = glGetUniformLocation(program_, "u_detail_color");
+    material_response_uniform_ = glGetUniformLocation(program_, "u_material_response");
     light_direction_uniform_ = glGetUniformLocation(program_, "u_light_direction");
+    camera_position_uniform_ = glGetUniformLocation(program_, "u_camera_position");
 
-    if (view_projection_uniform_ < 0 || model_uniform_ < 0 || color_uniform_ < 0 || light_direction_uniform_ < 0) {
+    if (view_projection_uniform_ < 0 || model_uniform_ < 0 || base_color_uniform_ < 0 || detail_color_uniform_ < 0
+        || material_response_uniform_ < 0 || light_direction_uniform_ < 0 || camera_position_uniform_ < 0) {
         glDeleteProgram(program_);
         throw std::runtime_error("required shader uniform was not found");
     }
@@ -218,26 +289,40 @@ MeshRenderer::GpuMesh MeshRenderer::upload_mesh(const MeshData& mesh)
     };
 }
 
-void MeshRenderer::draw_mesh(const GpuMesh& mesh, const Mat4& model, const Mat4& view_projection, const Vec4& color)
+void MeshRenderer::draw_mesh(const GpuMesh& mesh, const Mat4& model, const Mat4& view_projection,
+                            const Material& material, const Vec3& light_direction, const Vec3& camera_position)
 {
+    const auto normalized_light_direction = normalize(light_direction);
+
     glUseProgram(program_);
     glUniformMatrix4fv(view_projection_uniform_, 1, GL_FALSE, view_projection.ptr());
     glUniformMatrix4fv(model_uniform_, 1, GL_FALSE, model.ptr());
-    glUniform4f(color_uniform_, color.x, color.y, color.z, color.w);
-    glUniform3f(light_direction_uniform_, -0.5F, 0.8F, 0.6F);
+    glUniform4f(base_color_uniform_, material.base_color.x, material.base_color.y, material.base_color.z,
+                material.base_color.w);
+    glUniform4f(detail_color_uniform_, material.detail_color.x, material.detail_color.y, material.detail_color.z,
+                material.detail_color.w);
+    glUniform4f(material_response_uniform_, material.response.x, material.response.y, material.response.z,
+                material.response.w);
+    glUniform3f(light_direction_uniform_, normalized_light_direction.x, normalized_light_direction.y,
+                normalized_light_direction.z);
+    glUniform3f(camera_position_uniform_, camera_position.x, camera_position.y, camera_position.z);
 
     glBindBuffer(GL_ARRAY_BUFFER, mesh.vertex_buffer);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(2);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(MeshVertex),
                           reinterpret_cast<const void*>(offsetof(MeshVertex, position)));
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(MeshVertex),
                           reinterpret_cast<const void*>(offsetof(MeshVertex, normal)));
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(MeshVertex),
+                          reinterpret_cast<const void*>(offsetof(MeshVertex, surface_variation)));
 
     glDrawArrays(GL_TRIANGLES, 0, mesh.vertex_count);
 
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
+    glDisableVertexAttribArray(2);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
