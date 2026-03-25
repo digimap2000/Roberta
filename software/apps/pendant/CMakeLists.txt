@@ -6,6 +6,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
 
 set(ROBERTA_PENDANT_SOURCES
+    src/backdrop_renderer.cpp
     src/text_renderer.cpp
     src/main.cpp
     src/mesh_renderer.cpp

@@ -1,3 +1,4 @@
+#include "backdrop_renderer.hpp"
 #include "mesh_renderer.hpp"
 #include "robot_view.hpp"
 #include "text_renderer.hpp"
@@ -206,11 +207,13 @@ int main()
 
         SDL_GL_SetSwapInterval(1);
 
+        roberta::pendant::BackdropRenderer backdrop_renderer;
         roberta::pendant::MeshRenderer renderer;
         roberta::pendant::RobotView robot_view(renderer);
         roberta::pendant::TextRenderer text_renderer;
 
         auto previous_tick = std::chrono::steady_clock::now();
+        float scene_time_seconds = 0.0F;
         bool running = true;
 
         while (running) {
@@ -240,6 +243,7 @@ int main()
             const auto delta_seconds =
                 std::chrono::duration<float>(now - previous_tick).count();
             previous_tick = now;
+            scene_time_seconds += std::min(delta_seconds, 0.1F);
 
             robot_view.update(std::min(delta_seconds, 0.1F));
 
@@ -248,7 +252,8 @@ int main()
             SDL_GL_GetDrawableSize(window.get(), &drawable_width, &drawable_height);
 
             renderer.set_viewport(drawable_width, drawable_height);
-            renderer.begin_frame(roberta::pendant::Vec4{0.04F, 0.05F, 0.07F, 1.0F});
+            renderer.begin_frame(roberta::pendant::Vec4{0.01F, 0.01F, 0.015F, 1.0F});
+            backdrop_renderer.draw(drawable_width, drawable_height, scene_time_seconds);
             robot_view.draw(renderer, drawable_width, drawable_height);
             text_renderer.set_viewport(drawable_width, drawable_height);
             draw_overlay_text(text_renderer);
