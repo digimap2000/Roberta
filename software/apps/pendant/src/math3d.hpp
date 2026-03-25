@@ -78,6 +78,31 @@ struct Mat4 final {
                  0.0F, 0.0F, 0.0F, 1.0F}};
 }
 
+[[nodiscard]] inline Vec4 transform(const Mat4& matrix, const Vec4& value)
+{
+    return Vec4{
+        (matrix.data[0] * value.x) + (matrix.data[4] * value.y) + (matrix.data[8] * value.z) + (matrix.data[12] * value.w),
+        (matrix.data[1] * value.x) + (matrix.data[5] * value.y) + (matrix.data[9] * value.z) + (matrix.data[13] * value.w),
+        (matrix.data[2] * value.x) + (matrix.data[6] * value.y) + (matrix.data[10] * value.z) + (matrix.data[14] * value.w),
+        (matrix.data[3] * value.x) + (matrix.data[7] * value.y) + (matrix.data[11] * value.z) + (matrix.data[15] * value.w),
+    };
+}
+
+[[nodiscard]] inline Vec3 transform_point(const Mat4& matrix, const Vec3& value)
+{
+    const auto transformed = transform(matrix, Vec4{value.x, value.y, value.z, 1.0F});
+    if (std::abs(transformed.w) <= 0.00001F) {
+        return Vec3{transformed.x, transformed.y, transformed.z};
+    }
+    return Vec3{transformed.x / transformed.w, transformed.y / transformed.w, transformed.z / transformed.w};
+}
+
+[[nodiscard]] inline Vec3 transform_direction(const Mat4& matrix, const Vec3& value)
+{
+    const auto transformed = transform(matrix, Vec4{value.x, value.y, value.z, 0.0F});
+    return Vec3{transformed.x, transformed.y, transformed.z};
+}
+
 [[nodiscard]] inline Mat4 multiply(const Mat4& lhs, const Mat4& rhs)
 {
     Mat4 result{};

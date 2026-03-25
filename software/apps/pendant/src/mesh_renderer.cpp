@@ -41,6 +41,7 @@ uniform vec4 u_detail_color;
 uniform vec4 u_material_response;
 uniform vec3 u_light_direction;
 uniform vec3 u_camera_position;
+uniform vec2 u_attention;
 
 varying vec3 v_normal;
 varying vec3 v_world_position;
@@ -58,11 +59,20 @@ void main()
     float specular_strength = u_material_response.y;
     float variation_strength = u_material_response.z;
     float edge_strength = u_material_response.w;
+    float focus = clamp(u_attention.x, 0.0, 1.0);
+    float mute = clamp(u_attention.y, 0.0, 1.0);
+    roughness = mix(roughness, clamp(roughness + 0.24, 0.08, 1.0), mute);
+    roughness = mix(roughness, max(0.08, roughness * 0.76), focus);
+    specular_strength *= mix(1.0, 0.52, mute) * mix(1.0, 1.35, focus);
+    variation_strength *= mix(1.0, 0.58, mute);
+    edge_strength *= mix(1.0, 0.70, mute) * mix(1.0, 1.45, focus);
     float surface_variation = ((v_surface_data.x * 2.0) - 1.0) * variation_strength;
     float edge_mask = clamp(v_surface_data.y * edge_strength, 0.0, 1.0);
 
     vec3 albedo = clamp(u_base_color.rgb * (1.0 + surface_variation), 0.0, 1.0);
     albedo = mix(albedo, u_detail_color.rgb, edge_mask * 0.22);
+    float neutral = dot(albedo, vec3(0.299, 0.587, 0.114));
+    albedo = mix(albedo, vec3(neutral * 0.76), mute * 0.58);
 
     float key = max(dot(normal, key_direction), 0.0);
     float fill = max(dot(normal, fill_direction), 0.0);
@@ -71,10 +81,13 @@ void main()
                 * (0.08 + edge_mask + (0.20 * (1.0 - key)));
     float specular = pow(max(dot(normal, half_vector), 0.0), mix(48.0, 10.0, roughness))
                      * specular_strength * (0.10 + (0.90 * key));
+    float focus_halo = pow(1.0 - max(dot(normal, view_direction), 0.0), 3.1)
+                       * focus * (0.16 + (0.24 * edge_mask) + (0.12 * (1.0 - key)));
 
-    vec3 base = albedo * (hemisphere + (key * 0.78) + (fill * 0.14));
+    vec3 base = albedo * (hemisphere + (key * 0.78) + (fill * 0.14)) * mix(1.0, 0.84, mute) * mix(1.0, 1.10, focus);
     vec3 lit = base + (u_detail_color.rgb * ((fill * 0.05) + (rim * 0.22) + (edge_mask * 0.10)))
-               + (mix(vec3(0.18, 0.19, 0.20), u_detail_color.rgb, 0.45) * specular);
+               + (mix(vec3(0.18, 0.19, 0.20), u_detail_color.rgb, 0.45) * specular)
+               + (mix(u_detail_color.rgb, vec3(1.0), 0.32) * focus_halo);
     lit = min(lit, vec3(1.0));
     gl_FragColor = vec4(lit, u_base_color.a);
 }
@@ -112,6 +125,7 @@ uniform vec4 u_detail_color;
 uniform vec4 u_material_response;
 uniform vec3 u_light_direction;
 uniform vec3 u_camera_position;
+uniform vec2 u_attention;
 
 varying vec3 v_normal;
 varying vec3 v_world_position;
@@ -129,11 +143,20 @@ void main()
     float specular_strength = u_material_response.y;
     float variation_strength = u_material_response.z;
     float edge_strength = u_material_response.w;
+    float focus = clamp(u_attention.x, 0.0, 1.0);
+    float mute = clamp(u_attention.y, 0.0, 1.0);
+    roughness = mix(roughness, clamp(roughness + 0.24, 0.08, 1.0), mute);
+    roughness = mix(roughness, max(0.08, roughness * 0.76), focus);
+    specular_strength *= mix(1.0, 0.52, mute) * mix(1.0, 1.35, focus);
+    variation_strength *= mix(1.0, 0.58, mute);
+    edge_strength *= mix(1.0, 0.70, mute) * mix(1.0, 1.45, focus);
     float surface_variation = ((v_surface_data.x * 2.0) - 1.0) * variation_strength;
     float edge_mask = clamp(v_surface_data.y * edge_strength, 0.0, 1.0);
 
     vec3 albedo = clamp(u_base_color.rgb * (1.0 + surface_variation), 0.0, 1.0);
     albedo = mix(albedo, u_detail_color.rgb, edge_mask * 0.22);
+    float neutral = dot(albedo, vec3(0.299, 0.587, 0.114));
+    albedo = mix(albedo, vec3(neutral * 0.76), mute * 0.58);
 
     float key = max(dot(normal, key_direction), 0.0);
     float fill = max(dot(normal, fill_direction), 0.0);
@@ -142,10 +165,13 @@ void main()
                 * (0.08 + edge_mask + (0.20 * (1.0 - key)));
     float specular = pow(max(dot(normal, half_vector), 0.0), mix(48.0, 10.0, roughness))
                      * specular_strength * (0.10 + (0.90 * key));
+    float focus_halo = pow(1.0 - max(dot(normal, view_direction), 0.0), 3.1)
+                       * focus * (0.16 + (0.24 * edge_mask) + (0.12 * (1.0 - key)));
 
-    vec3 base = albedo * (hemisphere + (key * 0.78) + (fill * 0.14));
+    vec3 base = albedo * (hemisphere + (key * 0.78) + (fill * 0.14)) * mix(1.0, 0.84, mute) * mix(1.0, 1.10, focus);
     vec3 lit = base + (u_detail_color.rgb * ((fill * 0.05) + (rim * 0.22) + (edge_mask * 0.10)))
-               + (mix(vec3(0.18, 0.19, 0.20), u_detail_color.rgb, 0.45) * specular);
+               + (mix(vec3(0.18, 0.19, 0.20), u_detail_color.rgb, 0.45) * specular)
+               + (mix(u_detail_color.rgb, vec3(1.0), 0.32) * focus_halo);
     lit = min(lit, vec3(1.0));
     gl_FragColor = vec4(lit, u_base_color.a);
 }
@@ -231,9 +257,11 @@ MeshRenderer::MeshRenderer()
     material_response_uniform_ = glGetUniformLocation(program_, "u_material_response");
     light_direction_uniform_ = glGetUniformLocation(program_, "u_light_direction");
     camera_position_uniform_ = glGetUniformLocation(program_, "u_camera_position");
+    attention_uniform_ = glGetUniformLocation(program_, "u_attention");
 
     if (view_projection_uniform_ < 0 || model_uniform_ < 0 || base_color_uniform_ < 0 || detail_color_uniform_ < 0
-        || material_response_uniform_ < 0 || light_direction_uniform_ < 0 || camera_position_uniform_ < 0) {
+        || material_response_uniform_ < 0 || light_direction_uniform_ < 0 || camera_position_uniform_ < 0
+        || attention_uniform_ < 0) {
         glDeleteProgram(program_);
         throw std::runtime_error("required shader uniform was not found");
     }
@@ -290,7 +318,8 @@ MeshRenderer::GpuMesh MeshRenderer::upload_mesh(const MeshData& mesh)
 }
 
 void MeshRenderer::draw_mesh(const GpuMesh& mesh, const Mat4& model, const Mat4& view_projection,
-                            const Material& material, const Vec3& light_direction, const Vec3& camera_position)
+                            const Material& material, const Vec3& light_direction, const Vec3& camera_position,
+                            float focus_amount, float mute_amount)
 {
     const auto normalized_light_direction = normalize(light_direction);
 
@@ -306,6 +335,7 @@ void MeshRenderer::draw_mesh(const GpuMesh& mesh, const Mat4& model, const Mat4&
     glUniform3f(light_direction_uniform_, normalized_light_direction.x, normalized_light_direction.y,
                 normalized_light_direction.z);
     glUniform3f(camera_position_uniform_, camera_position.x, camera_position.y, camera_position.z);
+    glUniform2f(attention_uniform_, focus_amount, mute_amount);
 
     glBindBuffer(GL_ARRAY_BUFFER, mesh.vertex_buffer);
     glEnableVertexAttribArray(0);

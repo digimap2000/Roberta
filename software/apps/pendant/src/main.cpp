@@ -1,4 +1,5 @@
 #include "backdrop_renderer.hpp"
+#include "line_renderer.hpp"
 #include "mesh_renderer.hpp"
 #include "robot_view.hpp"
 #include "text_renderer.hpp"
@@ -44,7 +45,7 @@ namespace {
 #endif
 }
 
-void draw_overlay_text(roberta::pendant::TextRenderer& text_renderer)
+void draw_overlay_text(roberta::pendant::TextRenderer& text_renderer, int selected_axis)
 {
     using roberta::pendant::Color;
     using roberta::pendant::FontFace;
@@ -86,9 +87,15 @@ void draw_overlay_text(roberta::pendant::TextRenderer& text_renderer)
                             detail_shadow_style);
     text_renderer.draw_text("Fonts: Geist Regular | Geist Mono Regular", 24.0F, 78.0F, detail_style);
 
-    text_renderer.draw_text("Keys: ARROWS/KP4 KP6 KP8 KP2  PERIOD  MINUS  SPACE  R  ESC", 24.0F + 1.0F,
+    text_renderer.draw_text("Keys: ARROWS/KP4 KP6 KP8 KP2  PERIOD  MINUS  1-6  SPACE  R  ESC", 24.0F + 1.0F,
                             100.0F + 1.0F, detail_shadow_style);
-    text_renderer.draw_text("Keys: ARROWS/KP4 KP6 KP8 KP2  PERIOD  MINUS  SPACE  R  ESC", 24.0F, 100.0F, detail_style);
+    text_renderer.draw_text("Keys: ARROWS/KP4 KP6 KP8 KP2  PERIOD  MINUS  1-6  SPACE  R  ESC", 24.0F, 100.0F,
+                            detail_style);
+
+    const auto selected_axis_line =
+        selected_axis >= 0 ? std::string("Active: Axis ") + std::to_string(selected_axis + 1) : std::string("Active: None");
+    text_renderer.draw_text(selected_axis_line, 24.0F + 1.0F, 122.0F + 1.0F, detail_shadow_style);
+    text_renderer.draw_text(selected_axis_line, 24.0F, 122.0F, detail_style);
 }
 
 class SdlSession final {
@@ -159,6 +166,7 @@ void print_banner()
         << "  Down / Keypad 2   orbit down\n"
         << "  Period            zoom in\n"
         << "  Minus             zoom out\n"
+        << "  1-6               highlight axis annotation\n"
         << "  Space             pause/resume robot motion\n"
         << "  R                 reset camera\n"
         << "  Escape / Q        quit\n";
@@ -208,6 +216,7 @@ int main()
         SDL_GL_SetSwapInterval(1);
 
         roberta::pendant::BackdropRenderer backdrop_renderer;
+        roberta::pendant::LineRenderer line_renderer;
         roberta::pendant::MeshRenderer renderer;
         roberta::pendant::RobotView robot_view(renderer);
         roberta::pendant::TextRenderer text_renderer;
@@ -254,9 +263,9 @@ int main()
             renderer.set_viewport(drawable_width, drawable_height);
             renderer.begin_frame(roberta::pendant::Vec4{0.01F, 0.01F, 0.015F, 1.0F});
             backdrop_renderer.draw(drawable_width, drawable_height, scene_time_seconds);
-            robot_view.draw(renderer, drawable_width, drawable_height);
             text_renderer.set_viewport(drawable_width, drawable_height);
-            draw_overlay_text(text_renderer);
+            robot_view.draw(renderer, line_renderer, text_renderer, drawable_width, drawable_height);
+            draw_overlay_text(text_renderer, robot_view.selected_axis());
 
             SDL_GL_SwapWindow(window.get());
         }

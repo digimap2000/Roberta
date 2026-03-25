@@ -6,11 +6,15 @@
 #include <SDL.h>
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <numbers>
 #include <stdexcept>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace roberta::pendant {
 namespace {
@@ -18,6 +22,10 @@ namespace {
 constexpr Vec3 k_camera_target{-0.15F, 0.20F, 0.75F};
 constexpr float k_min_orbit_pitch{-0.15F};
 constexpr float k_max_orbit_pitch{1.20F};
+constexpr float k_default_orbit_yaw{0.75F + std::numbers::pi_v<float>};
+constexpr float k_default_orbit_pitch{0.35F};
+constexpr float k_default_camera_distance{3.1F};
+constexpr std::array<float, 6> k_axis_annotation_radii{{0.44F, 0.25F, 0.24F, 0.20F, 0.17F, 0.15F}};
 
 struct LinkDefinition final {
     std::string_view mesh_name;
@@ -60,11 +68,90 @@ constexpr std::array<LinkDefinition, 7> k_link_definitions{{
     return {};
 }
 
+[[nodiscard]] Vec3 perpendicular_hint(const Vec3& axis)
+{
+    if (std::abs(axis.z) < 0.82F) {
+        return Vec3{0.0F, 0.0F, 1.0F};
+    }
+    return Vec3{1.0F, 0.0F, 0.0F};
+}
+
+[[nodiscard]] Vec3 project_onto_plane(const Vec3& value, const Vec3& plane_normal)
+{
+    return value - (plane_normal * dot(value, plane_normal));
+}
+
+[[nodiscard]] Vec4 scale_alpha(const Vec4& color, float alpha_scale)
+{
+    return Vec4{color.x, color.y, color.z, color.w * alpha_scale};
+}
+
+void add_segment(std::vector<LineRenderer::Vertex>& vertices, const Vec3& start, const Vec3& end, const Vec4& color)
+{
+    vertices.push_back(LineRenderer::Vertex{start, color});
+    vertices.push_back(LineRenderer::Vertex{end, color});
+}
+
+void add_ring(std::vector<LineRenderer::Vertex>& vertices, const Vec3& center, const Vec3& basis_u, const Vec3& basis_v,
+              float radius, int segments, const Vec4& color)
+{
+    const auto segment_count = std::max(segments, 3);
+    for (int index = 0; index < segment_count; ++index) {
+        const auto angle_a = (static_cast<float>(index) / static_cast<float>(segment_count)) * (2.0F * std::numbers::pi_v<float>);
+        const auto angle_b =
+            (static_cast<float>(index + 1) / static_cast<float>(segment_count)) * (2.0F * std::numbers::pi_v<float>);
+        const auto point_a = center + (basis_u * (std::cos(angle_a) * radius)) + (basis_v * (std::sin(angle_a) * radius));
+        const auto point_b = center + (basis_u * (std::cos(angle_b) * radius)) + (basis_v * (std::sin(angle_b) * radius));
+        add_segment(vertices, point_a, point_b, color);
+    }
+}
+
+void add_arc(std::vector<LineRenderer::Vertex>& vertices, const Vec3& center, const Vec3& basis_u, const Vec3& basis_v,
+             float radius, float start_angle, float end_angle, int segments, const Vec4& color)
+{
+    const auto segment_count = std::max(segments, 1);
+    for (int index = 0; index < segment_count; ++index) {
+        const auto t0 = static_cast<float>(index) / static_cast<float>(segment_count);
+        const auto t1 = static_cast<float>(index + 1) / static_cast<float>(segment_count);
+        const auto angle_a = start_angle + ((end_angle - start_angle) * t0);
+        const auto angle_b = start_angle + ((end_angle - start_angle) * t1);
+        const auto point_a = center + (basis_u * (std::cos(angle_a) * radius)) + (basis_v * (std::sin(angle_a) * radius));
+        const auto point_b = center + (basis_u * (std::cos(angle_b) * radius)) + (basis_v * (std::sin(angle_b) * radius));
+        add_segment(vertices, point_a, point_b, color);
+    }
+}
+
+[[nodiscard]] bool project_to_screen(const Mat4& view_projection, const Vec3& world_position, int surface_width,
+                                     int surface_height, float& out_x, float& out_y)
+{
+    const auto clip = transform(view_projection, Vec4{world_position.x, world_position.y, world_position.z, 1.0F});
+    if (clip.w <= 0.00001F) {
+        return false;
+    }
+
+    const auto inverse_w = 1.0F / clip.w;
+    const auto ndc_x = clip.x * inverse_w;
+    const auto ndc_y = clip.y * inverse_w;
+    const auto ndc_z = clip.z * inverse_w;
+
+    if (ndc_z < -1.0F || ndc_z > 1.0F) {
+        return false;
+    }
+
+    out_x = (ndc_x * 0.5F + 0.5F) * static_cast<float>(surface_width);
+    out_y = (1.0F - (ndc_y * 0.5F + 0.5F)) * static_cast<float>(surface_height);
+    return true;
+}
+
 } // namespace
 
 RobotView::RobotView(MeshRenderer& renderer)
     : asset_root_(resolve_asset_root())
 {
+    orbit_yaw_ = k_default_orbit_yaw;
+    orbit_pitch_ = k_default_orbit_pitch;
+    camera_distance_ = k_default_camera_distance;
+
     links_.reserve(k_link_definitions.size());
 
     for (const auto& definition : k_link_definitions) {
@@ -150,13 +237,31 @@ void RobotView::handle_keydown(int keycode)
     case SDLK_KP_MINUS:
         camera_distance_ = std::min(5.0F, camera_distance_ + 0.15F);
         break;
+    case SDLK_1:
+        selected_axis_ = selected_axis_ == 0 ? -1 : 0;
+        break;
+    case SDLK_2:
+        selected_axis_ = selected_axis_ == 1 ? -1 : 1;
+        break;
+    case SDLK_3:
+        selected_axis_ = selected_axis_ == 2 ? -1 : 2;
+        break;
+    case SDLK_4:
+        selected_axis_ = selected_axis_ == 3 ? -1 : 3;
+        break;
+    case SDLK_5:
+        selected_axis_ = selected_axis_ == 4 ? -1 : 4;
+        break;
+    case SDLK_6:
+        selected_axis_ = selected_axis_ == 5 ? -1 : 5;
+        break;
     case SDLK_SPACE:
         auto_motion_ = !auto_motion_;
         break;
     case SDLK_r:
-        orbit_yaw_ = 0.75F;
-        orbit_pitch_ = 0.35F;
-        camera_distance_ = 2.8F;
+        orbit_yaw_ = k_default_orbit_yaw;
+        orbit_pitch_ = k_default_orbit_pitch;
+        camera_distance_ = k_default_camera_distance;
         auto_motion_ = true;
         break;
     default:
@@ -164,10 +269,44 @@ void RobotView::handle_keydown(int keycode)
     }
 }
 
+int RobotView::selected_axis() const noexcept
+{
+    return selected_axis_;
+}
+
 void RobotView::update(float delta_seconds)
 {
     const auto dt = std::max(delta_seconds, 0.0F);
     time_seconds_ += dt;
+
+    const auto blend_t = 1.0F - std::exp(-dt * 10.0F);
+    std::array<float, 7> target_link_focus{};
+    std::array<float, 7> target_link_mute{};
+    std::array<float, 6> target_axis_annotation{};
+
+    if (selected_axis_ >= 0 && selected_axis_ < static_cast<int>(axis_annotation_blends_.size())) {
+        const auto active_axis_index = static_cast<std::size_t>(selected_axis_);
+        const auto active_joint_link = links_[active_axis_index + 1];
+        target_link_focus[static_cast<std::size_t>(active_joint_link.parent_index)] = 1.0F;
+        target_link_focus[active_axis_index + 1] = 1.0F;
+        target_axis_annotation[active_axis_index] = 1.0F;
+
+        for (std::size_t link_index = 0; link_index < target_link_mute.size(); ++link_index) {
+            if (target_link_focus[link_index] < 0.5F) {
+                target_link_mute[link_index] = 1.0F;
+            }
+        }
+    }
+
+    for (std::size_t link_index = 0; link_index < link_focus_blends_.size(); ++link_index) {
+        link_focus_blends_[link_index] += (target_link_focus[link_index] - link_focus_blends_[link_index]) * blend_t;
+        link_mute_blends_[link_index] += (target_link_mute[link_index] - link_mute_blends_[link_index]) * blend_t;
+    }
+
+    for (std::size_t axis_index = 0; axis_index < axis_annotation_blends_.size(); ++axis_index) {
+        axis_annotation_blends_[axis_index] +=
+            (target_axis_annotation[axis_index] - axis_annotation_blends_[axis_index]) * blend_t;
+    }
 
     if (!auto_motion_) {
         return;
@@ -197,7 +336,8 @@ std::array<Mat4, 7> RobotView::compute_link_transforms() const
     return transforms;
 }
 
-void RobotView::draw(MeshRenderer& renderer, int surface_width, int surface_height) const
+void RobotView::draw(MeshRenderer& renderer, LineRenderer& line_renderer, TextRenderer& text_renderer, int surface_width,
+                     int surface_height) const
 {
     const auto world_up = Vec3{0.0F, 0.0F, 1.0F};
     const auto aspect_ratio =
@@ -222,7 +362,119 @@ void RobotView::draw(MeshRenderer& renderer, int surface_width, int surface_heig
     const auto transforms = compute_link_transforms();
     for (std::size_t index = 0; index < links_.size(); ++index) {
         renderer.draw_mesh(links_[index].mesh, transforms[index], view_projection, links_[index].material,
-                           light_direction, eye);
+                           light_direction, eye, link_focus_blends_[index], link_mute_blends_[index]);
+    }
+
+    std::vector<LineRenderer::Vertex> annotation_vertices;
+    annotation_vertices.reserve(720);
+
+    float dominant_blend = 0.0F;
+    int dominant_axis = -1;
+    Vec3 dominant_label_anchor{};
+
+    for (std::size_t axis_index = 0; axis_index < axis_annotation_blends_.size(); ++axis_index) {
+        const auto blend = axis_annotation_blends_[axis_index];
+        if (blend <= 0.02F) {
+            continue;
+        }
+
+        const auto& joint_link = links_[axis_index + 1];
+        const auto parent_transform = transforms[static_cast<std::size_t>(joint_link.parent_index)];
+        const auto child_transform = transforms[axis_index + 1];
+        const auto joint_origin_world = transform_point(parent_transform, joint_link.joint_origin);
+        const auto joint_axis_world = normalize(transform_direction(parent_transform, joint_link.joint_axis));
+        const auto rotating_reference_world =
+            transform_direction(child_transform, perpendicular_hint(joint_link.joint_axis));
+        auto basis_u = normalize(project_onto_plane(rotating_reference_world, joint_axis_world));
+        if (length(basis_u) <= 0.00001F) {
+            basis_u = normalize(cross(joint_axis_world, perpendicular_hint(joint_axis_world)));
+        }
+        const auto basis_v = normalize(cross(joint_axis_world, basis_u));
+        const auto annotation_radius = k_axis_annotation_radii[axis_index];
+        const auto plate_offset = joint_axis_world * (annotation_radius * 0.11F);
+        const auto label_anchor =
+            joint_origin_world + (basis_u * (annotation_radius * 1.72F)) + (basis_v * (annotation_radius * 0.78F));
+
+        const auto bright = scale_alpha(Vec4{1.0F, 1.0F, 1.0F, 1.0F}, blend);
+        const auto mid = scale_alpha(Vec4{0.97F, 0.99F, 1.0F, 0.70F}, blend);
+        const auto soft = scale_alpha(Vec4{0.94F, 0.98F, 1.0F, 0.34F}, blend);
+        const auto faint = scale_alpha(Vec4{0.94F, 0.98F, 1.0F, 0.18F}, blend);
+
+        add_ring(annotation_vertices, joint_origin_world - plate_offset, basis_u, basis_v, annotation_radius * 0.98F, 56, mid);
+        add_ring(annotation_vertices, joint_origin_world + plate_offset, basis_u, basis_v, annotation_radius * 0.98F, 56, bright);
+        add_ring(annotation_vertices, joint_origin_world, basis_u, basis_v, annotation_radius * 0.74F, 40, soft);
+        add_ring(annotation_vertices, joint_origin_world, basis_u, basis_v, annotation_radius * 1.18F, 64, faint);
+        add_arc(annotation_vertices, joint_origin_world, basis_u, basis_v, annotation_radius * 1.28F, 0.10F,
+                0.74F * std::numbers::pi_v<float>, 24, soft);
+        add_arc(annotation_vertices, joint_origin_world, basis_u, basis_v, annotation_radius * 1.28F,
+                0.92F * std::numbers::pi_v<float>, 1.36F * std::numbers::pi_v<float>, 14, faint);
+        add_arc(annotation_vertices, joint_origin_world, basis_u, basis_v, annotation_radius * 1.28F,
+                1.50F * std::numbers::pi_v<float>, 1.92F * std::numbers::pi_v<float>, 16, soft);
+
+        for (int tick_index = 0; tick_index < 24; ++tick_index) {
+            const auto angle = (static_cast<float>(tick_index) / 24.0F) * (2.0F * std::numbers::pi_v<float>);
+            const auto direction = (basis_u * std::cos(angle)) + (basis_v * std::sin(angle));
+            const auto inner = joint_origin_world + (direction * (annotation_radius * (tick_index % 6 == 0 ? 1.01F : 1.07F)));
+            const auto outer =
+                joint_origin_world + (direction * (annotation_radius * (tick_index % 6 == 0 ? 1.34F : 1.18F)));
+            add_segment(annotation_vertices, inner, outer, tick_index % 6 == 0 ? mid : faint);
+        }
+
+        for (const Vec3 direction : {basis_u, basis_v, basis_u * -1.0F, basis_v * -1.0F}) {
+            add_segment(annotation_vertices, joint_origin_world + (direction * (annotation_radius * 0.24F)),
+                        joint_origin_world + (direction * (annotation_radius * 0.62F)), soft);
+            add_segment(annotation_vertices, joint_origin_world + plate_offset + (direction * (annotation_radius * 0.98F)),
+                        joint_origin_world - plate_offset + (direction * (annotation_radius * 0.98F)), soft);
+            add_segment(annotation_vertices, joint_origin_world + plate_offset + (direction * (annotation_radius * 1.18F)),
+                        joint_origin_world - plate_offset + (direction * (annotation_radius * 1.18F)), faint);
+        }
+
+        for (int frame_index = 0; frame_index < 6; ++frame_index) {
+            const auto angle = (static_cast<float>(frame_index) / 6.0F) * (2.0F * std::numbers::pi_v<float>);
+            const auto direction = (basis_u * std::cos(angle)) + (basis_v * std::sin(angle));
+            const auto brace_a = joint_origin_world + plate_offset + (direction * (annotation_radius * 0.76F));
+            const auto brace_b = joint_origin_world - plate_offset + (direction * (annotation_radius * 0.76F));
+            const auto cage_a = joint_origin_world + plate_offset + (direction * (annotation_radius * 1.18F));
+            const auto cage_b = joint_origin_world - plate_offset + (direction * (annotation_radius * 1.18F));
+            add_segment(annotation_vertices, brace_a, cage_a, faint);
+            add_segment(annotation_vertices, brace_b, cage_b, faint);
+            add_segment(annotation_vertices, cage_a, cage_b, faint);
+        }
+
+        add_segment(annotation_vertices, joint_origin_world - (joint_axis_world * (annotation_radius * 0.82F)),
+                    joint_origin_world + (joint_axis_world * (annotation_radius * 0.82F)), soft);
+        add_segment(annotation_vertices, joint_origin_world + (basis_u * (annotation_radius * 1.18F)), label_anchor, mid);
+
+        if (blend > dominant_blend) {
+            dominant_blend = blend;
+            dominant_axis = static_cast<int>(axis_index);
+            dominant_label_anchor = label_anchor;
+        }
+    }
+
+    line_renderer.draw_lines(annotation_vertices, view_projection, true);
+
+    if (dominant_axis >= 0 && dominant_blend > 0.15F) {
+        float label_x = 0.0F;
+        float label_y = 0.0F;
+        if (project_to_screen(view_projection, dominant_label_anchor, surface_width, surface_height, label_x, label_y)) {
+            const TextStyle label_shadow_style{
+                .font = FontFace::mono,
+                .pixel_height = 18.0F,
+                .line_spacing = 1.0F,
+                .color = Color{0.01F, 0.01F, 0.02F, 0.75F * dominant_blend},
+            };
+            const TextStyle label_style{
+                .font = FontFace::mono,
+                .pixel_height = 18.0F,
+                .line_spacing = 1.0F,
+                .color = Color{0.96F, 0.98F, 1.0F, 0.96F * dominant_blend},
+            };
+
+            const auto label = std::string("AXIS ") + std::to_string(dominant_axis + 1) + " // JOINT PLANE";
+            text_renderer.draw_text(label, label_x + 1.0F, label_y + 1.0F, label_shadow_style);
+            text_renderer.draw_text(label, label_x, label_y, label_style);
+        }
     }
 }
 
