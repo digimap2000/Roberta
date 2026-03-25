@@ -1,0 +1,7 @@
+# Shared generated output for this standalone repo.
+/build/
+
+# Local OS/editor noise should not depend on a developer's global gitignore.
+.DS_Store
+.idea/
+.vscode/
