@@ -1,6 +1,7 @@
 #include "platform_init.h"
 
 #include "config/board_config.h"
+#include "hardware/clocks.h"
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
 
@@ -8,6 +9,8 @@
 
 void platform_init(void)
 {
+    set_sys_clock_khz(KEYPAD_BRIDGE_SYS_CLOCK_KHZ, true);
+
     for (size_t index = 0; index < KEYPAD_BRIDGE_BUTTON_COUNT; ++index) {
         gpio_init(KEYPAD_BRIDGE_BUTTON_PINS[index]);
         gpio_set_dir(KEYPAD_BRIDGE_BUTTON_PINS[index], GPIO_IN);

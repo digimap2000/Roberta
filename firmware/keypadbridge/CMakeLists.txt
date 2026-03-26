@@ -38,7 +38,7 @@ target_link_libraries(keypadbridge PRIVATE
     platform_pico2
 )
 
-pico_enable_stdio_usb(keypadbridge 1)
+pico_enable_stdio_usb(keypadbridge 0)
 pico_enable_stdio_uart(keypadbridge 0)
 
 pico_add_extra_outputs(keypadbridge)

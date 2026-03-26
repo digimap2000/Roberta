@@ -5,6 +5,15 @@ implementation scans eight direct GPIO button inputs, exposes their state over
 I2C slave mode, and drives an attention output when the debounced key state
 changes.
 
+## Power Profile
+
+- USB stdio is disabled in the firmware image.
+- The RP2350 system clock is reduced to `12 MHz`.
+- Button detection is interrupt-driven, so the CPU sleeps until either a button
+  edge, an I2C transaction, or a debounce deadline wakes it.
+- The firmware does not use dormant mode because the Pico must remain awake
+  enough to answer as an I2C slave.
+
 ## Assumptions
 
 - Each button closes its GPIO input to a shared common line tied to ground.

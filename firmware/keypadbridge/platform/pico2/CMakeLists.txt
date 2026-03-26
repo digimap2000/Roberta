@@ -9,6 +9,7 @@ target_include_directories(platform_pico2 PUBLIC
 
 target_link_libraries(platform_pico2 PUBLIC
     pico_stdlib
+    hardware_clocks
     hardware_gpio
     hardware_i2c
 )

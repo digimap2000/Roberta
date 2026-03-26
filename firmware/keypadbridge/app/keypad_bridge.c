@@ -6,15 +6,16 @@
 #include "hardware/sync.h"
 #include "keypad_protocol.h"
 #include "pico/i2c_slave.h"
+#include "pico/time.h"
 
 #include <stdbool.h>
 #include <stddef.h>
 
 typedef struct {
-    uint8_t raw_state_mask;
     uint8_t register_address;
     bool register_selected;
-    uint64_t last_raw_change_us[KEYPAD_BRIDGE_BUTTON_COUNT];
+    volatile bool debounce_pending;
+    volatile uint64_t debounce_deadline_us;
 } keypad_bridge_private_state_t;
 
 static keypad_bridge_private_state_t g_private_state;
@@ -22,6 +23,15 @@ static volatile uint8_t g_button_state_mask;
 static volatile uint8_t g_changed_state_mask;
 static volatile uint8_t g_event_counter;
 static volatile bool g_attention_asserted;
+
+static void keypad_bridge_button_irq(uint gpio, uint32_t events)
+{
+    (void)gpio;
+    (void)events;
+
+    g_private_state.debounce_deadline_us = time_us_64() + KEYPAD_BRIDGE_DEBOUNCE_US;
+    g_private_state.debounce_pending = true;
+}
 
 static inline void keypad_bridge_set_attention(bool asserted)
 {
@@ -119,13 +129,10 @@ void keypad_bridge_init(void)
 {
     const uint8_t initial_state = keypad_bridge_sample_raw_state();
 
-    g_private_state.raw_state_mask = initial_state;
     g_private_state.register_address = 0u;
     g_private_state.register_selected = false;
-
-    for (size_t index = 0; index < KEYPAD_BRIDGE_BUTTON_COUNT; ++index) {
-        g_private_state.last_raw_change_us[index] = 0u;
-    }
+    g_private_state.debounce_pending = false;
+    g_private_state.debounce_deadline_us = 0u;
 
     g_button_state_mask = initial_state;
     g_changed_state_mask = 0u;
@@ -133,56 +140,78 @@ void keypad_bridge_init(void)
     keypad_bridge_set_attention(false);
 
     i2c_slave_init(KEYPAD_BRIDGE_I2C_INSTANCE, KEYPAD_BRIDGE_I2C_ADDRESS, keypad_bridge_i2c_handler);
+
+    gpio_set_irq_enabled_with_callback(KEYPAD_BRIDGE_BUTTON_PINS[0],
+                                       GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL,
+                                       true,
+                                       keypad_bridge_button_irq);
+    for (size_t index = 1; index < KEYPAD_BRIDGE_BUTTON_COUNT; ++index) {
+        gpio_set_irq_enabled(KEYPAD_BRIDGE_BUTTON_PINS[index],
+                             GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL,
+                             true);
+    }
 }
 
 void keypad_bridge_tick(uint64_t now_us)
 {
+    uint64_t debounce_deadline_us;
+
+    {
+        const uint32_t irq_state = save_and_disable_interrupts();
+        const bool debounce_pending = g_private_state.debounce_pending;
+        debounce_deadline_us = g_private_state.debounce_deadline_us;
+        restore_interrupts(irq_state);
+
+        if (!debounce_pending || now_us < debounce_deadline_us) {
+            return;
+        }
+    }
+
     const uint8_t sampled_state = keypad_bridge_sample_raw_state();
-    uint8_t stable_state = g_button_state_mask;
 
-    if (sampled_state != g_private_state.raw_state_mask) {
-        const uint8_t delta = (uint8_t)(sampled_state ^ g_private_state.raw_state_mask);
-
-        for (size_t index = 0; index < KEYPAD_BRIDGE_BUTTON_COUNT; ++index) {
-            if ((delta & (uint8_t)(1u << index)) != 0u) {
-                g_private_state.last_raw_change_us[index] = now_us;
-            }
-        }
-
-        g_private_state.raw_state_mask = sampled_state;
-    }
-
-    for (size_t index = 0; index < KEYPAD_BRIDGE_BUTTON_COUNT; ++index) {
-        const uint8_t bit = (uint8_t)(1u << index);
-        const bool raw_pressed = (g_private_state.raw_state_mask & bit) != 0u;
-        const bool stable_pressed = (stable_state & bit) != 0u;
-
-        if (raw_pressed == stable_pressed) {
-            continue;
-        }
-
-        if ((now_us - g_private_state.last_raw_change_us[index]) < KEYPAD_BRIDGE_DEBOUNCE_US) {
-            continue;
-        }
-
-        if (raw_pressed) {
-            stable_state |= bit;
-        } else {
-            stable_state &= (uint8_t)~bit;
-        }
-    }
-
-    if (stable_state != g_button_state_mask) {
-        const uint8_t delta = (uint8_t)(stable_state ^ g_button_state_mask);
+    {
         const uint32_t irq_state = save_and_disable_interrupts();
 
-        g_button_state_mask = stable_state;
+        if (!g_private_state.debounce_pending || g_private_state.debounce_deadline_us != debounce_deadline_us) {
+            restore_interrupts(irq_state);
+            return;
+        }
+
+        g_private_state.debounce_pending = false;
+        restore_interrupts(irq_state);
+    }
+
+    if (sampled_state != g_button_state_mask) {
+        const uint8_t delta = (uint8_t)(sampled_state ^ g_button_state_mask);
+        const uint32_t irq_state = save_and_disable_interrupts();
+
+        g_button_state_mask = sampled_state;
         g_changed_state_mask |= delta;
         ++g_event_counter;
         keypad_bridge_set_attention(true);
 
         restore_interrupts(irq_state);
     }
+}
+
+void keypad_bridge_wait(void)
+{
+    uint64_t debounce_deadline_us;
+    bool debounce_pending;
+
+    const uint32_t irq_state = save_and_disable_interrupts();
+    debounce_pending = g_private_state.debounce_pending;
+    debounce_deadline_us = g_private_state.debounce_deadline_us;
+    restore_interrupts(irq_state);
+
+    if (!debounce_pending) {
+        __wfi();
+        return;
+    }
+
+    absolute_time_t deadline;
+    update_us_since_boot(&deadline, debounce_deadline_us);
+    (void)best_effort_wfe_or_timeout(deadline);
 }
 
 uint8_t keypad_bridge_get_button_state(void)
