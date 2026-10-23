@@ -1,0 +1,5 @@
+module CRobertaFFI [system] {
+    header "../../../../core/include/roberta/ffi/axis_client.h"
+    link "roberta_desktop_ffi"
+    export *
+}

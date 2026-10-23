@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>local.roberta.control</string>
+    <key>CFBundleName</key>
+    <string>Roberta Control</string>
+    <key>CFBundleDisplayName</key>
+    <string>Roberta Control</string>
+    <key>CFBundleExecutable</key>
+    <string>RobertaControl</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>26.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Roberta Control finds and drives axis controllers on your workshop network.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_roberta-axis._tcp</string>
+    </array>
+</dict>
+</plist>
