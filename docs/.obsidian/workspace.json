@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "comau-ns16/pendant/keypad-connector-mapping.md",
+                "file": "comau-ns16/motors/encoder-wiring.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "keypad-connector-mapping"
+              "title": "encoder-wiring"
             }
           }
         ]
@@ -78,7 +78,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300
+    "width": 234.5
   },
   "right": {
     "id": "60e45f260ef42536",
@@ -185,8 +185,10 @@
   },
   "active": "af60d99169aed1eb",
   "lastOpenFiles": [
-    "comau-ns16/pendant/images/keypad-connectors.jpeg",
+    "axis-controller/design.md",
+    "comau-ns16/motors/encoder-wiring.md",
     "comau-ns16/pendant/keypad-connector-mapping.md",
+    "comau-ns16/pendant/images/keypad-connectors.jpeg",
     "comau-ns16/pendant/images/tp4i-example.jpg",
     "comau-ns16/pendant/images/connector-positions.jpeg",
     "comau-ns16/pendant/images/annotely_image.jpeg",
