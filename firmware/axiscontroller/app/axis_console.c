@@ -1,15 +1,18 @@
 #include "axis_console.h"
 
+#include "axis_net.h"
 #include "axis_registers.h"
 
 #include "pico/stdlib.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 enum {
-    AXIS_CONSOLE_LINE_BUFFER_SIZE = 128,
+    AXIS_CONSOLE_LINE_BUFFER_SIZE = 256,
+    AXIS_CONSOLE_OUTPUT_BUFFER_SIZE = 256,
     AXIS_CONSOLE_STATUS_PERIOD_US = 500000,
     REG_CONTROL_WORD = 0x0010,
     REG_STATUS_WORD = 0x0011,
@@ -44,6 +47,34 @@ static char g_line_buffer[AXIS_CONSOLE_LINE_BUFFER_SIZE];
 static size_t g_line_length;
 static bool g_line_overflowed;
 static uint64_t g_last_status_us;
+static AxisConsoleWriteFn g_write;
+
+static void usb_console_write(const char *text, size_t length)
+{
+    fwrite(text, 1, length, stdout);
+    fflush(stdout);
+}
+
+// Responses go to whichever transport delivered the current line.
+static void console_printf(const char *format, ...)
+{
+    char buffer[AXIS_CONSOLE_OUTPUT_BUFFER_SIZE];
+    va_list args;
+    int length;
+
+    va_start(args, format);
+    length = vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+
+    if (length < 0) {
+        return;
+    }
+    if ((size_t)length >= sizeof(buffer)) {
+        length = (int)sizeof(buffer) - 1;
+    }
+
+    (g_write != NULL ? g_write : usb_console_write)(buffer, (size_t)length);
+}
 
 static bool parse_on_off(const char *token, bool *value)
 {
@@ -119,12 +150,12 @@ static bool find_register_info(uint16_t address, AxisRegisterInfo *info)
 
 static void print_prompt(void)
 {
-    printf("axis> ");
+    console_printf("axis> ");
 }
 
 static void print_register_result(AxisRegisterResult result)
 {
-    printf("%s\r\n", axis_registers_result_to_string(result));
+    console_printf("%s\r\n", axis_registers_result_to_string(result));
 }
 
 static void print_register_value(uint16_t address)
@@ -143,7 +174,7 @@ static void print_register_value(uint16_t address)
         info.name = "UNKNOWN";
     }
 
-    printf("%s (0x%04x) = 0x%08lx u=%lu i=%ld\r\n",
+    console_printf("%s (0x%04x) = 0x%08lx u=%lu i=%ld\r\n",
            info.name,
            info.address,
            (unsigned long)value,
@@ -153,8 +184,97 @@ static void print_register_value(uint16_t address)
 
 static void print_help(void)
 {
-    printf("commands: help status reg read <addr|name> reg write <addr|name> <value> reg bitset <addr|name> <mask> reg bitclear <addr|name> <mask> reg dump\r\n");
-    printf("aliases: enable on|off outputs on|off zero home goto <steps> move <steps> vel <sps> accel <sps2> stop\r\n");
+    console_printf("commands: help status reg read <addr|name> reg readm <addr|name>... reg write <addr|name> <value> reg bitset <addr|name> <mask> reg bitclear <addr|name> <mask> reg dump\r\n");
+    console_printf("aliases: enable on|off outputs on|off zero home goto <steps> move <steps> vel <sps> accel <sps2> stop\r\n");
+    console_printf("network: ping net [status] net ssid <ssid> net pass <password> net name <name> net save net forget net watchdog <ms>\r\n");
+}
+
+static void print_net_status(void)
+{
+    AxisNetStatus status;
+    int32_t rssi = 0;
+    char rssi_text[12] = "-";
+
+    if (axis_net_read_rssi(&rssi)) {
+        snprintf(rssi_text, sizeof(rssi_text), "%ld", (long)rssi);
+    }
+
+    axis_net_get_status(&status);
+    console_printf("net state=%s link=%d host=%s.local port=%d ssid=%s ip=%s client=%s rssi=%s watchdog_ms=%lu trips=%lu\r\n",
+                   axis_net_state_to_string(status.state),
+                   status.link_status,
+                   status.hostname,
+                   AXIS_NET_TCP_PORT,
+                   status.ssid[0] != '\0' ? status.ssid : "-",
+                   status.ip[0] != '\0' ? status.ip : "-",
+                   status.client_ip[0] != '\0' ? status.client_ip : "-",
+                   rssi_text,
+                   (unsigned long)status.watchdog_ms,
+                   (unsigned long)status.watchdog_trips);
+}
+
+// Copies the rest of the line, so SSIDs and passwords may contain spaces.
+static bool copy_remainder(char *save, char *destination, size_t capacity)
+{
+    size_t length;
+
+    if (save == NULL) {
+        return false;
+    }
+    while (*save == ' ' || *save == '\t') {
+        save++;
+    }
+
+    length = strlen(save);
+    if (length == 0 || length >= capacity) {
+        return false;
+    }
+
+    memcpy(destination, save, length + 1);
+    return true;
+}
+
+static void handle_net_command(char *save)
+{
+    AxisNetSettings *staged = axis_net_staged_settings();
+    char *subcommand = strtok_r(NULL, " \t", &save);
+
+    if (subcommand == NULL || strcmp(subcommand, "status") == 0) {
+        print_net_status();
+    } else if (strcmp(subcommand, "ssid") == 0) {
+        console_printf(copy_remainder(save, staged->ssid, sizeof(staged->ssid))
+                           ? "staged ssid, run net save to apply\r\n"
+                           : "usage: net ssid <ssid>\r\n");
+    } else if (strcmp(subcommand, "pass") == 0) {
+        console_printf(copy_remainder(save, staged->password, sizeof(staged->password))
+                           ? "staged password, run net save to apply\r\n"
+                           : "usage: net pass <password>\r\n");
+    } else if (strcmp(subcommand, "name") == 0) {
+        char *name = strtok_r(NULL, " \t", &save);
+        if (name != NULL && axis_settings_name_is_valid(name)) {
+            snprintf(staged->name, sizeof(staged->name), "%s", name);
+            console_printf("staged name, run net save to apply\r\n");
+        } else {
+            console_printf("usage: net name <letters, digits, hyphens>\r\n");
+        }
+    } else if (strcmp(subcommand, "save") == 0) {
+        console_printf(axis_net_apply_settings(true) ? "saved, reconnecting\r\n" : "save failed\r\n");
+    } else if (strcmp(subcommand, "forget") == 0) {
+        console_printf(axis_net_forget_settings() ? "forgotten\r\n" : "erase failed\r\n");
+    } else if (strcmp(subcommand, "watchdog") == 0) {
+        uint32_t timeout_ms = 0;
+        char *arg = strtok_r(NULL, " \t", &save);
+        if (arg != NULL && parse_u32(arg, &timeout_ms)) {
+            axis_net_set_watchdog_ms(timeout_ms);
+            console_printf("OK\r\n");
+        } else {
+            console_printf("usage: net watchdog <ms, 0 disables>\r\n");
+        }
+    } else {
+        console_printf("unknown net command: %s\r\n", subcommand);
+    }
+
+    print_prompt();
 }
 
 static void print_status(void)
@@ -175,7 +295,7 @@ static void print_status(void)
     axis_registers_read(REG_INPUT_WORD, &inputs);
     axis_registers_read(REG_STEP_COUNT, &step_count);
 
-    printf("status pos=%ld target=%ld vel=%lu outputs=%s motor=%s homed=%s moving=%s homing=%s home=%d a=%d b=%d faults=0x%08lx steps=%lu\r\n",
+    console_printf("status pos=%ld target=%ld vel=%lu outputs=%s motor=%s homed=%s moving=%s homing=%s home=%d a=%d b=%d faults=0x%08lx steps=%lu\r\n",
            (long)(int32_t)position,
            (long)(int32_t)target,
            (unsigned long)velocity,
@@ -206,7 +326,7 @@ static void print_dump(void)
             continue;
         }
 
-        printf("0x%04x %-32s 0x%08lx u=%lu i=%ld %s\r\n",
+        console_printf("0x%04x %-32s 0x%08lx u=%lu i=%ld %s\r\n",
                info.address,
                info.name,
                (unsigned long)value,
@@ -233,7 +353,7 @@ static void handle_reg_command(char *save)
     char *subcommand = strtok_r(NULL, " \t", &save);
 
     if (subcommand == NULL) {
-        printf("usage: reg read|write|bitset|bitclear|dump\r\n");
+        console_printf("usage: reg read|write|bitset|bitclear|dump\r\n");
         print_prompt();
         return;
     }
@@ -249,12 +369,31 @@ static void handle_reg_command(char *save)
         char *target = strtok_r(NULL, " \t", &save);
 
         if (target == NULL || !parse_register_address(target, &address)) {
-            printf("usage: reg read <addr|name>\r\n");
+            console_printf("usage: reg read <addr|name>\r\n");
             print_prompt();
             return;
         }
 
         print_register_value(address);
+        print_prompt();
+        return;
+    }
+
+    // Batched read: one response line per register, in request order.
+    if (strcmp(subcommand, "readm") == 0) {
+        char *target = strtok_r(NULL, " \t", &save);
+
+        if (target == NULL) {
+            console_printf("usage: reg readm <addr|name>...\r\n");
+        }
+        for (; target != NULL; target = strtok_r(NULL, " \t", &save)) {
+            uint16_t address = 0;
+            if (parse_register_address(target, &address)) {
+                print_register_value(address);
+            } else {
+                console_printf("not-found %s\r\n", target);
+            }
+        }
         print_prompt();
         return;
     }
@@ -271,7 +410,7 @@ static void handle_reg_command(char *save)
         if (target == NULL || arg == NULL ||
             !parse_register_address(target, &address) ||
             !parse_register_value(arg, &value)) {
-            printf("usage: reg %s <addr|name> <value>\r\n", subcommand);
+            console_printf("usage: reg %s <addr|name> <value>\r\n", subcommand);
             print_prompt();
             return;
         }
@@ -292,7 +431,7 @@ static void handle_reg_command(char *save)
         return;
     }
 
-    printf("unknown reg command: %s\r\n", subcommand);
+    console_printf("unknown reg command: %s\r\n", subcommand);
     print_prompt();
 }
 
@@ -323,6 +462,17 @@ static void handle_line(char *line)
         return;
     }
 
+    if (strcmp(command, "net") == 0) {
+        handle_net_command(save);
+        return;
+    }
+
+    if (strcmp(command, "ping") == 0) {
+        console_printf("pong\r\n");
+        print_prompt();
+        return;
+    }
+
     if (strcmp(command, "stop") == 0) {
         print_register_result(axis_registers_bit_set(REG_CONTROL_WORD, CONTROL_STOP));
         print_prompt();
@@ -348,7 +498,7 @@ static void handle_line(char *line)
         AxisRegisterResult result;
 
         if (arg == NULL || !parse_on_off(arg, &flag)) {
-            printf("usage: %s on|off\r\n", command);
+            console_printf("usage: %s on|off\r\n", command);
             print_prompt();
             return;
         }
@@ -366,7 +516,7 @@ static void handle_line(char *line)
         AxisRegisterResult result;
 
         if (arg == NULL || !parse_i32(arg, &steps)) {
-            printf("usage: %s <steps>\r\n", command);
+            console_printf("usage: %s <steps>\r\n", command);
             print_prompt();
             return;
         }
@@ -388,7 +538,7 @@ static void handle_line(char *line)
         AxisRegisterResult result;
 
         if (arg == NULL || !parse_u32(arg, &value)) {
-            printf("usage: %s <value>\r\n", command);
+            console_printf("usage: %s <value>\r\n", command);
             print_prompt();
             return;
         }
@@ -399,8 +549,15 @@ static void handle_line(char *line)
         return;
     }
 
-    printf("unknown command: %s\r\n", command);
+    console_printf("unknown command: %s\r\n", command);
     print_prompt();
+}
+
+void axis_console_handle_line(char *line, AxisConsoleWriteFn write)
+{
+    g_write = write;
+    handle_line(line);
+    g_write = NULL;
 }
 
 void axis_console_init(void)
@@ -409,7 +566,7 @@ void axis_console_init(void)
     g_line_overflowed = false;
     g_last_status_us = time_us_64();
 
-    printf("axiscontroller ready\r\n");
+    console_printf("axiscontroller ready\r\n");
     print_help();
     print_status();
     print_prompt();
@@ -425,13 +582,13 @@ void axis_console_poll(void)
         }
 
         if (ch == '\r' || ch == '\n') {
-            printf("\r\n");
+            console_printf("\r\n");
             if (g_line_overflowed) {
-                printf("line-too-long\r\n");
+                console_printf("line-too-long\r\n");
                 print_prompt();
             } else {
                 g_line_buffer[g_line_length] = '\0';
-                handle_line(g_line_buffer);
+                axis_console_handle_line(g_line_buffer, usb_console_write);
             }
             g_line_length = 0;
             g_line_overflowed = false;
