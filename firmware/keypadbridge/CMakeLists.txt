@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 set(PICO_BOARD pico2 CACHE STRING "Target board")
 set(KEYPADBRIDGE_PICO_SDK_PATH "/opt/pico/pico-sdk" CACHE PATH "Path to the Raspberry Pi Pico SDK")
+option(KEYPADBRIDGE_USB_CONSOLE "Enable USB serial console logging" ON)
 
 if(EXISTS "/opt/pico/picotool" AND NOT TARGET picotool)
     message(STATUS "Using installed picotool from /opt/pico/picotool")
@@ -38,7 +39,7 @@ target_link_libraries(keypadbridge PRIVATE
     platform_pico2
 )
 
-pico_enable_stdio_usb(keypadbridge 0)
+pico_enable_stdio_usb(keypadbridge ${KEYPADBRIDGE_USB_CONSOLE})
 pico_enable_stdio_uart(keypadbridge 0)
 
 pico_add_extra_outputs(keypadbridge)

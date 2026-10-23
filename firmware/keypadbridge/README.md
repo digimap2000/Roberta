@@ -7,7 +7,8 @@ changes.
 
 ## Power Profile
 
-- USB stdio is disabled in the firmware image.
+- USB stdio is enabled by default for bring-up, so debounced button transitions
+  are printed to the Pico 2 console.
 - The RP2350 system clock is reduced to `12 MHz`.
 - Button detection is interrupt-driven, so the CPU sleeps until either a button
   edge, an I2C transaction, or a debounce deadline wakes it.
@@ -24,11 +25,26 @@ changes.
 
 ## Default Pin Map
 
-- Buttons: `GP2` through `GP9`
-- Attention: `GP10`
+- Button common: `GND` on physical pin `13`
+- Buttons: `GP10` through `GP17`
+- Attention: `GP18`
 - I2C slave SDA: `GP20`
 - I2C slave SCL: `GP21`
 - I2C address: `0x20`
+
+For the current pendant bring-up, wire the nine-way button tail as:
+
+| Pendant | Pico GPIO | Pico physical pin |
+| --- | --- | --- |
+| Common | `GND` | `13` |
+| Button 0 | `GP10` | `14` |
+| Button 1 | `GP11` | `15` |
+| Button 2 | `GP12` | `16` |
+| Button 3 | `GP13` | `17` |
+| Button 4 | `GP14` | `19` |
+| Button 5 | `GP15` | `20` |
+| Button 6 | `GP16` | `22` |
+| Button 7 | `GP17` | `23` |
 
 ## Register Map
 
@@ -54,3 +70,6 @@ cmake --build build/firmware/keypadbridge
 
 The project defaults to the SDK installed at `/opt/pico/pico-sdk`. Override
 `KEYPADBRIDGE_PICO_SDK_PATH` at configure time if needed.
+
+To restore the low-power I2C-only image, configure with
+`-DKEYPADBRIDGE_USB_CONSOLE=OFF`.

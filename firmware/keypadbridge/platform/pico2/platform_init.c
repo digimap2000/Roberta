@@ -4,12 +4,19 @@
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
 #include "hardware/i2c.h"
+#include "pico/stdlib.h"
 
 #include <stddef.h>
 
 void platform_init(void)
 {
+#if KEYPADBRIDGE_USB_CONSOLE
+    set_sys_clock_khz(KEYPAD_BRIDGE_USB_CONSOLE_SYS_CLOCK_KHZ, true);
+    stdio_init_all();
+    sleep_ms(KEYPAD_BRIDGE_USB_SETTLE_MS);
+#else
     set_sys_clock_khz(KEYPAD_BRIDGE_SYS_CLOCK_KHZ, true);
+#endif
 
     for (size_t index = 0; index < KEYPAD_BRIDGE_BUTTON_COUNT; ++index) {
         gpio_init(KEYPAD_BRIDGE_BUTTON_PINS[index]);
