@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <array>
+
 #include <roberta/core/registers.hpp>
 #include <roberta/protocol/modbus.hpp>
 #include <roberta/protocol/register_transport.hpp>
@@ -64,6 +66,67 @@ TEST(RegisterTransportTests, ConsoleTransportParsesRegisterReadsAndWrites)
 
     EXPECT_TRUE(transport.write_register(roberta::core::AxisRegister::axis_id, 3).has_value());
     EXPECT_TRUE(transport.set_bits(roberta::core::AxisRegister::control_word, 0x01).has_value());
+}
+
+TEST(RegisterTransportTests, ConsoleTransportBatchesReadsWithReadm)
+{
+    roberta::transport::FakeTextTransport text([](const roberta::transport::TextExchange& exchange)
+        -> roberta::core::Result<std::string> {
+        if (exchange.request_line == "reg readm 0x0011 0x0022") {
+            return std::string{
+                "STATUS_WORD (0x0011) = 0x00000013 u=19 i=19\n"
+                "CURRENT_POSITION_STEPS (0x0022) = 0xffffff9c u=4294967196 i=-100"};
+        }
+        return std::string{"unexpected"};
+    });
+
+    roberta::protocol::ConsoleRegisterTransport transport(text);
+    ASSERT_TRUE(transport.open().has_value());
+
+    const std::array regs{
+        roberta::core::AxisRegister::status_word,
+        roberta::core::AxisRegister::current_position_steps,
+    };
+    auto values = transport.read_registers(regs);
+    ASSERT_TRUE(values.has_value()) << values.error().message;
+    ASSERT_EQ(values->size(), 2u);
+    EXPECT_EQ((*values)[0].value, 0x13u);
+    EXPECT_EQ(static_cast<std::int32_t>((*values)[1].value), -100);
+    EXPECT_EQ(text.transcript().size(), 1u);
+}
+
+TEST(RegisterTransportTests, ConsoleTransportFallsBackWithoutReadm)
+{
+    roberta::transport::FakeTextTransport text([](const roberta::transport::TextExchange& exchange)
+        -> roberta::core::Result<std::string> {
+        if (exchange.request_line.starts_with("reg readm")) {
+            return std::string{"unknown reg command: readm"};
+        }
+        if (exchange.request_line == "reg read STATUS_WORD") {
+            return std::string{"STATUS_WORD (0x0011) = 0x00000001 u=1 i=1"};
+        }
+        if (exchange.request_line == "reg read FAULT_WORD") {
+            return std::string{"FAULT_WORD (0x0012) = 0x00000000 u=0 i=0"};
+        }
+        return std::string{"unexpected"};
+    });
+
+    roberta::protocol::ConsoleRegisterTransport transport(text);
+    ASSERT_TRUE(transport.open().has_value());
+
+    const std::array regs{
+        roberta::core::AxisRegister::status_word,
+        roberta::core::AxisRegister::fault_word,
+    };
+    for (int pass = 0; pass < 2; ++pass) {
+        auto values = transport.read_registers(regs);
+        ASSERT_TRUE(values.has_value()) << values.error().message;
+        EXPECT_EQ((*values)[0].value, 1u);
+        EXPECT_EQ((*values)[1].value, 0u);
+    }
+
+    // One failed readm probe, then single reads only.
+    EXPECT_EQ(text.transcript().size(), 5u);
 }
 
 TEST(RegisterTransportTests, ModbusRegisterTransportUsesWordSplitMapping)

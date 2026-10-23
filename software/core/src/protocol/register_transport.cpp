@@ -1,5 +1,6 @@
 #include <roberta/protocol/register_transport.hpp>
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <format>
@@ -226,14 +227,93 @@ roberta::core::Result<std::vector<RegisterValue>> ConsoleRegisterTransport::read
 {
     std::vector<RegisterValue> result;
     result.reserve(regs.size());
-    for (const auto reg : regs) {
-        auto value = read_register(reg);
-        if (!value) {
-            return std::unexpected(value.error());
+
+    // Batch reads with "reg readm" to save round trips (they dominate over
+    // WiFi); fall back to single reads on firmware without it.
+    constexpr std::size_t max_batch = 16;
+    for (std::size_t offset = 0; offset < regs.size(); offset += max_batch) {
+        const auto batch = regs.subspan(offset, std::min(max_batch, regs.size() - offset));
+        if (multi_read_supported_ && batch.size() > 1) {
+            auto values = read_register_batch(batch);
+            if (values) {
+                result.insert(result.end(), values->begin(), values->end());
+                continue;
+            }
+            if (values.error().code != roberta::core::ErrorCode::unsupported) {
+                return std::unexpected(values.error());
+            }
+            multi_read_supported_ = false;
         }
-        result.push_back(RegisterValue{reg, *value});
+
+        for (const auto reg : batch) {
+            auto value = read_register(reg);
+            if (!value) {
+                return std::unexpected(value.error());
+            }
+            result.push_back(RegisterValue{reg, *value});
+        }
     }
     return result;
+}
+
+roberta::core::Result<std::vector<RegisterValue>> ConsoleRegisterTransport::read_register_batch(
+    std::span<const roberta::core::AxisRegister> regs)
+{
+    std::string command = "reg readm";
+    for (const auto reg : regs) {
+        command += std::format(" 0x{:04x}", static_cast<std::uint16_t>(reg));
+    }
+
+    auto response = issue(std::move(command));
+    if (!response) {
+        return std::unexpected(response.error());
+    }
+    if (response->find("unknown reg command") != std::string::npos) {
+        return std::unexpected(roberta::core::make_error(
+            roberta::core::ErrorCode::unsupported, "console does not support reg readm"));
+    }
+
+    // Each line reads "NAME (0xADDR) = 0xVALUE ...".
+    std::vector<RegisterValue> values;
+    values.reserve(regs.size());
+    std::string_view remaining = *response;
+    while (!remaining.empty()) {
+        const auto newline = remaining.find('\n');
+        const auto line = remaining.substr(0, newline);
+        remaining = newline == std::string_view::npos ? std::string_view{} : remaining.substr(newline + 1);
+
+        const auto address_pos = line.find("(0x");
+        const auto value_pos = line.find("= 0x");
+        if (address_pos == std::string_view::npos || value_pos == std::string_view::npos) {
+            continue;
+        }
+
+        std::uint16_t address = 0;
+        std::uint32_t value = 0;
+        const auto address_text = line.substr(address_pos + 3);
+        const auto value_text = line.substr(value_pos + 4);
+        const auto parsed_address = std::from_chars(address_text.data(), address_text.data() + address_text.size(), address, 16);
+        const auto parsed_value = std::from_chars(value_text.data(), value_text.data() + value_text.size(), value, 16);
+        if (parsed_address.ec == std::errc{} && parsed_value.ec == std::errc{}) {
+            values.push_back(RegisterValue{static_cast<roberta::core::AxisRegister>(address), value});
+        }
+    }
+
+    std::vector<RegisterValue> ordered;
+    ordered.reserve(regs.size());
+    for (const auto reg : regs) {
+        const auto found = std::find_if(values.begin(), values.end(), [reg](const RegisterValue& value) {
+            return value.reg == reg;
+        });
+        if (found == values.end()) {
+            return std::unexpected(roberta::core::make_error(
+                roberta::core::ErrorCode::protocol,
+                std::format("reg readm response missing {}", roberta::core::register_name(reg)),
+                *response));
+        }
+        ordered.push_back(*found);
+    }
+    return ordered;
 }
 
 roberta::core::Status ConsoleRegisterTransport::write_register(roberta::core::AxisRegister reg, std::uint32_t value)

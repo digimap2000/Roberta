@@ -81,9 +81,12 @@ public:
 private:
     [[nodiscard]] roberta::core::Result<std::string> issue(std::string command);
     [[nodiscard]] static roberta::core::Result<std::uint32_t> parse_register_value(std::string_view response);
+    [[nodiscard]] roberta::core::Result<std::vector<RegisterValue>> read_register_batch(
+        std::span<const roberta::core::AxisRegister> regs);
 
     roberta::transport::ITextTransport& transport_;
     bool open_{false};
+    bool multi_read_supported_{true};
 };
 
 class MemoryRegisterTransport final : public IRegisterTransport {

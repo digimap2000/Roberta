@@ -14,11 +14,12 @@
 #include <sstream>
 #include <roberta/core/registers.hpp>
 #include <roberta/core/runtime.hpp>
-#include <roberta/axis/serial_console_axis_device.hpp>
+#include <roberta/axis/console_axis_device.hpp>
 #include <roberta/model/robot_model.hpp>
 #include <roberta/service/robot_service.hpp>
 #include <roberta/service/single_axis_service.hpp>
 #include <roberta/sim/simulated_axis_device.hpp>
+#include <roberta/transport/tcp_transport.hpp>
 
 #include <iostream>
 
@@ -34,7 +35,7 @@ void print_usage()
         << "  roberta_cli --runtime\n"
         << "  roberta_cli --registers\n"
         << "  roberta_cli --sim-demo\n"
-        << "  roberta_cli axis --port <device> [--baud <rate>] <command> [args]\n"
+        << "  roberta_cli axis --port <device|tcp://host[:port]> [--baud <rate>] <command> [args]\n"
         << "commands:\n"
         << "  status\n"
         << "  enable\n"
@@ -206,8 +207,8 @@ roberta::core::Result<int> run_axis_command(int argc, char** argv)
             roberta::core::ErrorCode::invalid_argument, "missing axis subcommand"));
     }
 
-    auto axis = std::make_shared<roberta::axis::SerialConsoleAxisDevice>(
-        roberta::transport::SerialPortConfig{.device_path = device_path, .baud_rate = baud_rate});
+    auto axis = std::make_shared<roberta::axis::ConsoleAxisDevice>(
+        roberta::transport::make_console_text_transport(device_path, baud_rate));
     roberta::service::SingleAxisService service(axis);
 
     auto status = service.connect();

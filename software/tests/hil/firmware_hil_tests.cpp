@@ -9,17 +9,22 @@
 #include <string>
 #include <thread>
 
-#include <roberta/axis/serial_console_axis_device.hpp>
+#include <roberta/axis/console_axis_device.hpp>
 #include <roberta/core/registers.hpp>
 #include <roberta/service/single_axis_service.hpp>
-#include <roberta/transport/serial_transport.hpp>
+#include <roberta/transport/tcp_transport.hpp>
 
 namespace {
 
 using namespace std::chrono_literals;
 
-[[nodiscard]] std::string hil_serial_port()
+// ROBERTA_HIL_AXIS_URL selects a WiFi controller (tcp://host[:port]);
+// otherwise the suite looks for a USB serial port.
+[[nodiscard]] std::string hil_endpoint()
 {
+    if (const char* env = std::getenv("ROBERTA_HIL_AXIS_URL"); env != nullptr && *env != '\0') {
+        return env;
+    }
     if (const char* env = std::getenv("ROBERTA_HIL_SERIAL_PORT"); env != nullptr && *env != '\0') {
         return env;
     }
@@ -38,23 +43,23 @@ using namespace std::chrono_literals;
     return ROBERTA_HIL_DEFAULT_SERIAL_PORT;
 }
 
-[[nodiscard]] bool hil_port_available(const std::string& device_path)
+[[nodiscard]] bool hil_endpoint_available(const std::string& endpoint)
 {
-    return std::filesystem::exists(device_path);
+    return roberta::transport::parse_tcp_url(endpoint).has_value() || std::filesystem::exists(endpoint);
 }
 
 class FirmwareHilTests : public ::testing::Test {
 protected:
     void SetUp() override
     {
-        const auto device_path = hil_serial_port();
-        if (!hil_port_available(device_path)) {
-            GTEST_SKIP() << "HIL serial port not present: " << device_path
-                         << " (override with ROBERTA_HIL_SERIAL_PORT)";
+        const auto endpoint = hil_endpoint();
+        if (!hil_endpoint_available(endpoint)) {
+            GTEST_SKIP() << "HIL axis not present: " << endpoint
+                         << " (override with ROBERTA_HIL_SERIAL_PORT or ROBERTA_HIL_AXIS_URL)";
         }
 
-        axis_ = std::make_shared<roberta::axis::SerialConsoleAxisDevice>(
-            roberta::transport::SerialPortConfig{.device_path = device_path, .baud_rate = 115200});
+        axis_ = std::make_shared<roberta::axis::ConsoleAxisDevice>(
+            roberta::transport::make_console_text_transport(endpoint));
         service_ = std::make_unique<roberta::service::SingleAxisService>(axis_);
 
         require_ok(service_->connect(), "connect");
@@ -165,7 +170,7 @@ protected:
         return last;
     }
 
-    std::shared_ptr<roberta::axis::SerialConsoleAxisDevice> axis_;
+    std::shared_ptr<roberta::axis::ConsoleAxisDevice> axis_;
     std::unique_ptr<roberta::service::SingleAxisService> service_;
 };
 
@@ -185,14 +190,13 @@ protected:
 
     void SetUp() override
     {
-        const auto device_path = hil_serial_port();
-        if (!hil_port_available(device_path)) {
-            GTEST_SKIP() << "HIL serial port not present: " << device_path
-                         << " (override with ROBERTA_HIL_SERIAL_PORT)";
+        const auto endpoint = hil_endpoint();
+        if (!hil_endpoint_available(endpoint)) {
+            GTEST_SKIP() << "HIL axis not present: " << endpoint
+                         << " (override with ROBERTA_HIL_SERIAL_PORT or ROBERTA_HIL_AXIS_URL)";
         }
 
-        transport_ = std::make_unique<roberta::transport::PosixTextTransport>(
-            roberta::transport::SerialPortConfig{.device_path = device_path, .baud_rate = 115200});
+        transport_ = roberta::transport::make_console_text_transport(endpoint);
         require_ok(transport_->open(), "open raw console");
 
         require_command_contains("reg bitset CONTROL_WORD 1", "ok");
@@ -271,7 +275,7 @@ protected:
         ADD_FAILURE() << "axis did not stop within timeout";
     }
 
-    std::unique_ptr<roberta::transport::PosixTextTransport> transport_;
+    std::unique_ptr<roberta::transport::ITextTransport> transport_;
 };
 
 TEST_F(FirmwareHilTests, ConnectsAndReadsLiveSnapshot)

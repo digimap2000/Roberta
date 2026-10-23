@@ -12,7 +12,7 @@
 #include <roberta/axis/controller_axis_device.hpp>
 #include <roberta/core/registers.hpp>
 #include <roberta/protocol/register_transport.hpp>
-#include <roberta/transport/serial_transport.hpp>
+#include <roberta/transport/tcp_transport.hpp>
 
 namespace {
 
@@ -108,11 +108,8 @@ void write_error_from_result(
 class AxisClient final {
 public:
     AxisClient(std::string device_path, int baud_rate)
-        : text_transport_(roberta::transport::SerialPortConfig{
-              .device_path = std::move(device_path),
-              .baud_rate = baud_rate,
-          })
-        , register_transport_(text_transport_)
+        : text_transport_(roberta::transport::make_console_text_transport(device_path, baud_rate))
+        , register_transport_(*text_transport_)
         , device_(register_transport_)
     {
     }
@@ -183,6 +180,45 @@ public:
     [[nodiscard]] roberta::core::Status clear_faults()
     {
         return device_.clear_faults();
+    }
+
+    [[nodiscard]] roberta::core::Status stop(bool estop)
+    {
+        return device_.stop(estop);
+    }
+
+    [[nodiscard]] roberta::core::Status home()
+    {
+        return device_.home();
+    }
+
+    [[nodiscard]] roberta::core::Status move_by_steps(std::int32_t delta_steps)
+    {
+        return device_.move_by_steps(delta_steps);
+    }
+
+    [[nodiscard]] roberta::core::Status move_to_steps(std::int32_t target_steps)
+    {
+        return device_.move_to_steps(target_steps);
+    }
+
+    [[nodiscard]] roberta::core::Status set_motion_profile(
+        std::int32_t velocity, std::int32_t accel, std::int32_t home_velocity)
+    {
+        return device_.set_motion_profile(roberta::axis::AxisMotionProfile{
+            .velocity_steps_per_second = velocity,
+            .accel_steps_per_second_squared = accel,
+            .home_velocity_steps_per_second = home_velocity,
+        });
+    }
+
+    [[nodiscard]] roberta::core::Result<std::string> command(std::string line)
+    {
+        if (!device_.is_connected()) {
+            return std::unexpected(roberta::core::make_error(
+                roberta::core::ErrorCode::failed_precondition, "axis is not connected"));
+        }
+        return text_transport_->transact(roberta::transport::TextExchange{.request_line = std::move(line)});
     }
 
     [[nodiscard]] roberta::core::Status set_zero()
@@ -332,7 +368,7 @@ private:
         return std::nullopt;
     }
 
-    roberta::transport::PosixTextTransport text_transport_;
+    std::unique_ptr<roberta::transport::ITextTransport> text_transport_;
     roberta::protocol::ConsoleRegisterTransport register_transport_;
     roberta::axis::ControllerAxisDevice device_;
     std::optional<double> steps_per_degree_;
@@ -494,6 +530,112 @@ std::uint8_t roberta_axis_client_set_zero(
     const auto status = client->impl.set_zero();
     write_error_from_result(error_buffer, error_buffer_len, status);
     return static_cast<std::uint8_t>(status.has_value());
+}
+
+std::uint8_t roberta_axis_client_stop(
+    roberta_axis_client_t* client,
+    std::uint8_t estop,
+    char* error_buffer,
+    std::size_t error_buffer_len)
+{
+    if (client == nullptr) {
+        write_error(error_buffer, error_buffer_len, "axis client is null");
+        return 0;
+    }
+
+    const auto status = client->impl.stop(estop != 0);
+    write_error_from_result(error_buffer, error_buffer_len, status);
+    return static_cast<std::uint8_t>(status.has_value());
+}
+
+std::uint8_t roberta_axis_client_home(
+    roberta_axis_client_t* client,
+    char* error_buffer,
+    std::size_t error_buffer_len)
+{
+    if (client == nullptr) {
+        write_error(error_buffer, error_buffer_len, "axis client is null");
+        return 0;
+    }
+
+    const auto status = client->impl.home();
+    write_error_from_result(error_buffer, error_buffer_len, status);
+    return static_cast<std::uint8_t>(status.has_value());
+}
+
+std::uint8_t roberta_axis_client_move_by_steps(
+    roberta_axis_client_t* client,
+    std::int32_t delta_steps,
+    char* error_buffer,
+    std::size_t error_buffer_len)
+{
+    if (client == nullptr) {
+        write_error(error_buffer, error_buffer_len, "axis client is null");
+        return 0;
+    }
+
+    const auto status = client->impl.move_by_steps(delta_steps);
+    write_error_from_result(error_buffer, error_buffer_len, status);
+    return static_cast<std::uint8_t>(status.has_value());
+}
+
+std::uint8_t roberta_axis_client_move_to_steps(
+    roberta_axis_client_t* client,
+    std::int32_t target_steps,
+    char* error_buffer,
+    std::size_t error_buffer_len)
+{
+    if (client == nullptr) {
+        write_error(error_buffer, error_buffer_len, "axis client is null");
+        return 0;
+    }
+
+    const auto status = client->impl.move_to_steps(target_steps);
+    write_error_from_result(error_buffer, error_buffer_len, status);
+    return static_cast<std::uint8_t>(status.has_value());
+}
+
+std::uint8_t roberta_axis_client_set_motion_profile(
+    roberta_axis_client_t* client,
+    std::int32_t velocity_steps_per_second,
+    std::int32_t accel_steps_per_second_squared,
+    std::int32_t home_velocity_steps_per_second,
+    char* error_buffer,
+    std::size_t error_buffer_len)
+{
+    if (client == nullptr) {
+        write_error(error_buffer, error_buffer_len, "axis client is null");
+        return 0;
+    }
+
+    const auto status = client->impl.set_motion_profile(
+        velocity_steps_per_second, accel_steps_per_second_squared, home_velocity_steps_per_second);
+    write_error_from_result(error_buffer, error_buffer_len, status);
+    return static_cast<std::uint8_t>(status.has_value());
+}
+
+std::uint8_t roberta_axis_client_command(
+    roberta_axis_client_t* client,
+    const char* line,
+    char* response_buffer,
+    std::size_t response_buffer_len,
+    char* error_buffer,
+    std::size_t error_buffer_len)
+{
+    if (client == nullptr || line == nullptr) {
+        write_error(error_buffer, error_buffer_len, "axis client or command is null");
+        return 0;
+    }
+
+    auto response = client->impl.command(line);
+    if (!response) {
+        write_error(error_buffer, error_buffer_len, response.error().message);
+        return 0;
+    }
+
+    write_error(response_buffer, response_buffer_len, *response);
+    write_error(error_buffer, error_buffer_len, {});
+    return 1;
 }
 
 std::size_t roberta_axis_register_count(void)

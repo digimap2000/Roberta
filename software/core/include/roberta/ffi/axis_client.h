@@ -42,6 +42,8 @@ typedef struct roberta_axis_register_value_t {
     uint32_t value;
 } roberta_axis_register_value_t;
 
+/* device_path is a serial device such as "/dev/cu.usbmodem101" or a WiFi
+ * controller URL such as "tcp://roberta-j1.local" (default port 7300). */
 roberta_axis_client_t* roberta_axis_client_new(const char* device_path, int baud_rate);
 void roberta_axis_client_free(roberta_axis_client_t* client);
 
@@ -77,6 +79,43 @@ uint8_t roberta_axis_client_clear_faults(
     size_t error_buffer_len);
 uint8_t roberta_axis_client_set_zero(
     roberta_axis_client_t* client,
+    char* error_buffer,
+    size_t error_buffer_len);
+
+uint8_t roberta_axis_client_stop(
+    roberta_axis_client_t* client,
+    uint8_t estop,
+    char* error_buffer,
+    size_t error_buffer_len);
+uint8_t roberta_axis_client_home(
+    roberta_axis_client_t* client,
+    char* error_buffer,
+    size_t error_buffer_len);
+uint8_t roberta_axis_client_move_by_steps(
+    roberta_axis_client_t* client,
+    int32_t delta_steps,
+    char* error_buffer,
+    size_t error_buffer_len);
+uint8_t roberta_axis_client_move_to_steps(
+    roberta_axis_client_t* client,
+    int32_t target_steps,
+    char* error_buffer,
+    size_t error_buffer_len);
+uint8_t roberta_axis_client_set_motion_profile(
+    roberta_axis_client_t* client,
+    int32_t velocity_steps_per_second,
+    int32_t accel_steps_per_second_squared,
+    int32_t home_velocity_steps_per_second,
+    char* error_buffer,
+    size_t error_buffer_len);
+
+/* Sends one raw console line (for example "net status") and returns the
+ * response text with prompts removed. */
+uint8_t roberta_axis_client_command(
+    roberta_axis_client_t* client,
+    const char* line,
+    char* response_buffer,
+    size_t response_buffer_len,
     char* error_buffer,
     size_t error_buffer_len);
 

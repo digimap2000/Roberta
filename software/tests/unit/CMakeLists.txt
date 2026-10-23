@@ -4,6 +4,7 @@ add_executable(roberta_core_tests
     model_motion_service_tests.cpp
     protocol_and_transport_tests.cpp
     runtime_tests.cpp
+    tcp_transport_tests.cpp
 )
 
 target_link_libraries(roberta_core_tests

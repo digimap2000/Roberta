@@ -17,6 +17,12 @@ struct TextExchange final {
 
 using TextHandler = std::function<roberta::core::Result<std::string>(const TextExchange&)>;
 
+inline constexpr std::string_view k_console_prompt = "axis> ";
+
+// Strips prompts and blank lines from raw axis console output, joining the
+// remaining lines with '\n'.
+[[nodiscard]] std::string normalize_console_response(std::string response);
+
 class ITextTransport {
 public:
     virtual ~ITextTransport() = default;

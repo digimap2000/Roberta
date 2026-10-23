@@ -1,13 +1,17 @@
 #pragma once
 
+#include <memory>
+
 #include <roberta/axis/controller_axis_device.hpp>
-#include <roberta/transport/serial_transport.hpp>
+#include <roberta/transport/text_transport.hpp>
 
 namespace roberta::axis {
 
-class SerialConsoleAxisDevice final : public IAxisDevice {
+// An axis controller reached through its text console, over USB serial or a
+// WiFi TCP connection (see roberta::transport::make_console_text_transport).
+class ConsoleAxisDevice final : public IAxisDevice {
 public:
-    explicit SerialConsoleAxisDevice(roberta::transport::SerialPortConfig config);
+    explicit ConsoleAxisDevice(std::unique_ptr<roberta::transport::ITextTransport> text_transport);
 
     roberta::core::Status connect() override;
     void disconnect() noexcept override;
@@ -30,7 +34,7 @@ public:
     roberta::core::Status advance(std::chrono::milliseconds delta) override;
 
 private:
-    roberta::transport::PosixTextTransport text_transport_;
+    std::unique_ptr<roberta::transport::ITextTransport> text_transport_;
     roberta::protocol::ConsoleRegisterTransport register_transport_;
     ControllerAxisDevice device_;
 };
