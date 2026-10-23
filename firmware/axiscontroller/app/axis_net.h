@@ -45,5 +45,8 @@ bool axis_net_apply_settings(bool persist);
 bool axis_net_forget_settings(void);
 void axis_net_set_watchdog_ms(uint32_t timeout_ms);
 
+// Starts a WiFi scan; results print on the USB console when it finishes.
+bool axis_net_start_scan(void);
+
 // Console output sink for the active TCP client.
 void axis_net_write(const char *text, size_t length);

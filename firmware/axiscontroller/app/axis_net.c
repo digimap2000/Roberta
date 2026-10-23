@@ -35,7 +35,15 @@ enum {
     AXIS_NET_RETRY_DELAY_US = 5000000,
     AXIS_NET_EVENT_CLIENT_CONNECTED = 1u << 0,
     AXIS_NET_EVENT_CLIENT_LOST = 1u << 1,
+    AXIS_NET_SCAN_MAX = 24,
 };
+
+typedef struct {
+    char ssid[AXIS_SETTINGS_SSID_MAX + 1];
+    int16_t rssi;
+    uint16_t channel;
+    uint8_t auth_mode;
+} AxisNetScanEntry;
 
 static const char k_service_type[] = "_roberta-axis";
 
@@ -74,6 +82,12 @@ static uint32_t g_watchdog_ms = AXIS_NET_DEFAULT_WATCHDOG_MS;
 static uint32_t g_watchdog_trips;
 static uint64_t g_led_next_us;
 static bool g_led_on;
+
+// Filled from the cyw43 scan callback; read by the main loop once the scan
+// is no longer active.
+static AxisNetScanEntry g_scan[AXIS_NET_SCAN_MAX];
+static size_t g_scan_count;
+static bool g_scan_pending;
 
 static struct netif *sta_netif(void)
 {
@@ -454,7 +468,7 @@ static void poll_link(uint64_t now_us)
         break;
 
     case AXIS_NET_STATE_RETRY_WAIT:
-        if (now_us - g_state_since_us > AXIS_NET_RETRY_DELAY_US) {
+        if (!g_scan_pending && now_us - g_state_since_us > AXIS_NET_RETRY_DELAY_US) {
             begin_connect(now_us);
         }
         break;
@@ -494,6 +508,61 @@ static void poll_led(uint64_t now_us)
         g_led_on = on;
         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, on);
     }
+}
+
+// Scan ----------------------------------------------------------------------
+
+static int on_scan_result(void *env, const cyw43_ev_scan_result_t *result)
+{
+    (void)env;
+
+    if (result == NULL || result->ssid_len == 0) {
+        return 0;
+    }
+
+    // One entry per SSID, keeping the strongest access point.
+    for (size_t index = 0; index < g_scan_count; index++) {
+        AxisNetScanEntry *entry = &g_scan[index];
+        if (strlen(entry->ssid) == result->ssid_len &&
+            memcmp(entry->ssid, result->ssid, result->ssid_len) == 0) {
+            if (result->rssi > entry->rssi) {
+                entry->rssi = result->rssi;
+                entry->channel = result->channel;
+                entry->auth_mode = result->auth_mode;
+            }
+            return 0;
+        }
+    }
+
+    if (g_scan_count < AXIS_NET_SCAN_MAX) {
+        AxisNetScanEntry *entry = &g_scan[g_scan_count++];
+        const size_t length = result->ssid_len < AXIS_SETTINGS_SSID_MAX ? result->ssid_len : AXIS_SETTINGS_SSID_MAX;
+        memcpy(entry->ssid, result->ssid, length);
+        entry->ssid[length] = '\0';
+        entry->rssi = result->rssi;
+        entry->channel = result->channel;
+        entry->auth_mode = result->auth_mode;
+    }
+    return 0;
+}
+
+static void poll_scan(void)
+{
+    if (!g_scan_pending || cyw43_wifi_scan_active(&cyw43_state)) {
+        return;
+    }
+
+    g_scan_pending = false;
+    printf("net scan: %u networks (2.4 GHz only)\r\n", (unsigned)g_scan_count);
+    for (size_t index = 0; index < g_scan_count; index++) {
+        const AxisNetScanEntry *entry = &g_scan[index];
+        printf("  ch %2u  %4d dBm  %-6s  \"%s\"\r\n",
+               entry->channel,
+               entry->rssi,
+               entry->auth_mode == 0 ? "open" : "secure",
+               entry->ssid);
+    }
+    printf("axis> ");
 }
 
 // Public API ----------------------------------------------------------------
@@ -538,6 +607,7 @@ void axis_net_poll(uint64_t now_us)
     poll_watchdog(now_us);
     flush_tx();
     poll_led(now_us);
+    poll_scan();
 }
 
 void axis_net_get_status(AxisNetStatus *status)
@@ -619,6 +689,20 @@ bool axis_net_forget_settings(void)
         restart_link(time_us_64());
     }
     return true;
+}
+
+bool axis_net_start_scan(void)
+{
+    cyw43_wifi_scan_options_t options;
+
+    if (!g_available || g_scan_pending) {
+        return false;
+    }
+
+    memset(&options, 0, sizeof(options));
+    g_scan_count = 0;
+    g_scan_pending = cyw43_wifi_scan(&cyw43_state, &options, NULL, on_scan_result) == 0;
+    return g_scan_pending;
 }
 
 void axis_net_set_watchdog_ms(uint32_t timeout_ms)

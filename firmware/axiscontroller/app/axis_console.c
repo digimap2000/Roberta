@@ -48,6 +48,9 @@ static size_t g_line_length;
 static bool g_line_overflowed;
 static uint64_t g_last_status_us;
 static AxisConsoleWriteFn g_write;
+// Echo typed characters on USB so terminal programs show what is typed. Host
+// tools turn it off with "echo off".
+static bool g_echo = true;
 
 static void usb_console_write(const char *text, size_t length)
 {
@@ -185,8 +188,8 @@ static void print_register_value(uint16_t address)
 static void print_help(void)
 {
     console_printf("commands: help status reg read <addr|name> reg readm <addr|name>... reg write <addr|name> <value> reg bitset <addr|name> <mask> reg bitclear <addr|name> <mask> reg dump\r\n");
-    console_printf("aliases: enable on|off outputs on|off zero home goto <steps> move <steps> vel <sps> accel <sps2> stop\r\n");
-    console_printf("network: ping net [status] net ssid <ssid> net pass <password> net name <name> net save net forget net watchdog <ms>\r\n");
+    console_printf("aliases: echo on|off enable on|off outputs on|off zero home goto <steps> move <steps> vel <sps> accel <sps2> stop\r\n");
+    console_printf("network: ping net [status] net scan net ssid <ssid> net pass <password> net name <name> net save net forget net watchdog <ms>\r\n");
 }
 
 static void print_net_status(void)
@@ -261,6 +264,10 @@ static void handle_net_command(char *save)
         console_printf(axis_net_apply_settings(true) ? "saved, reconnecting\r\n" : "save failed\r\n");
     } else if (strcmp(subcommand, "forget") == 0) {
         console_printf(axis_net_forget_settings() ? "forgotten\r\n" : "erase failed\r\n");
+    } else if (strcmp(subcommand, "scan") == 0) {
+        console_printf(axis_net_start_scan()
+                           ? "scanning, results follow on the USB console\r\n"
+                           : "scan unavailable, try again in a few seconds\r\n");
     } else if (strcmp(subcommand, "watchdog") == 0) {
         uint32_t timeout_ms = 0;
         char *arg = strtok_r(NULL, " \t", &save);
@@ -467,6 +474,20 @@ static void handle_line(char *line)
         return;
     }
 
+    if (strcmp(command, "echo") == 0) {
+        bool flag = false;
+        char *arg = strtok_r(NULL, " \t", &save);
+
+        if (arg == NULL || !parse_on_off(arg, &flag)) {
+            console_printf("usage: echo on|off\r\n");
+        } else {
+            g_echo = flag;
+            console_printf("OK\r\n");
+        }
+        print_prompt();
+        return;
+    }
+
     if (strcmp(command, "ping") == 0) {
         console_printf("pong\r\n");
         print_prompt();
@@ -595,13 +616,22 @@ void axis_console_poll(void)
             continue;
         }
 
-        if ((ch == 0x08 || ch == 0x7f) && g_line_length > 0) {
-            g_line_length--;
+        if (ch == 0x08 || ch == 0x7f) {
+            if (g_line_length > 0) {
+                g_line_length--;
+                if (g_echo) {
+                    usb_console_write("\b \b", 3);
+                }
+            }
             continue;
         }
 
         if (g_line_length + 1 < sizeof(g_line_buffer)) {
             g_line_buffer[g_line_length++] = (char)ch;
+            if (g_echo && ch >= 0x20 && ch < 0x7f) {
+                const char echoed = (char)ch;
+                usb_console_write(&echoed, 1);
+            }
         } else {
             g_line_overflowed = true;
         }

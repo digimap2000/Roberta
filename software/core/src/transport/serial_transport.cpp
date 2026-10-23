@@ -296,6 +296,18 @@ roberta::core::Status PosixTextTransport::open()
         close();
         return status;
     }
+
+    // Typed-character echo is for people at a terminal; it would leak request
+    // text into responses. Older firmware answers "unknown command", which is
+    // harmless.
+    static constexpr std::string_view k_echo_off = "echo off\r\n";
+    status = write_all(fd_, std::span<const std::uint8_t>(
+        reinterpret_cast<const std::uint8_t*>(k_echo_off.data()), k_echo_off.size()));
+    if (!status) {
+        close();
+        return status;
+    }
+    (void)read_until_prompt(fd_, std::chrono::milliseconds(500));
     return roberta::core::ok_status();
 }
 
