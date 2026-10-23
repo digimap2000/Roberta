@@ -13,3 +13,8 @@ target_link_libraries(roberta_core_tests
 )
 
 gtest_discover_tests(roberta_core_tests)
+
+target_compile_definitions(roberta_core_tests
+    PRIVATE
+        ROBERTA_URDF_PATH="${PROJECT_SOURCE_DIR}/urdf/ns16.urdf"
+)

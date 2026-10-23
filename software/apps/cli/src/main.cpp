@@ -82,7 +82,7 @@ void print_register_summary()
 int run_sim_demo()
 {
     const auto config = roberta::model::load_robot_from_urdf(
-        std::filesystem::path("/Users/andys/Documents/ajs/ALP/projects/roberta/software/urdf/ns16.urdf"));
+        std::filesystem::path(ROBERTA_URDF_PATH));
     if (!config) {
         std::cerr << config.error().context << '\n';
         return 1;

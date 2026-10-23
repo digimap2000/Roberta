@@ -10,7 +10,7 @@ namespace {
 
 TEST(ModelTests, LoadsUrdfAndComputesForwardKinematics)
 {
-    const auto path = std::filesystem::path("/Users/andys/Documents/ajs/ALP/projects/roberta/software/urdf/ns16.urdf");
+    const auto path = std::filesystem::path(ROBERTA_URDF_PATH);
     auto config = roberta::model::load_robot_from_urdf(path);
     ASSERT_TRUE(config.has_value());
     EXPECT_EQ(config->joints.size(), 6u);
@@ -23,7 +23,7 @@ TEST(ModelTests, LoadsUrdfAndComputesForwardKinematics)
 
 TEST(MotionTests, PlannerAndCoordinatorExecuteSynchronizedMoveInSimulation)
 {
-    const auto path = std::filesystem::path("/Users/andys/Documents/ajs/ALP/projects/roberta/software/urdf/ns16.urdf");
+    const auto path = std::filesystem::path(ROBERTA_URDF_PATH);
     auto config = roberta::model::load_robot_from_urdf(path);
     ASSERT_TRUE(config.has_value());
     roberta::model::RobotModel model(*config);
@@ -56,7 +56,7 @@ TEST(MotionTests, PlannerAndCoordinatorExecuteSynchronizedMoveInSimulation)
 
 TEST(ServiceTests, ServiceSubmitsAndCompletesJointAndCartesianMoves)
 {
-    const auto path = std::filesystem::path("/Users/andys/Documents/ajs/ALP/projects/roberta/software/urdf/ns16.urdf");
+    const auto path = std::filesystem::path(ROBERTA_URDF_PATH);
     auto config = roberta::model::load_robot_from_urdf(path);
     ASSERT_TRUE(config.has_value());
     roberta::model::RobotModel model(*config);
