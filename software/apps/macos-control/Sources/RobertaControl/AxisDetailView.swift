@@ -180,10 +180,10 @@ private struct JogPanel: View {
 
                 HStack {
                     HoldButton(title: "Hold to jog −", systemImage: "chevron.left.2") { pressed in
-                        pressed ? axis.move(by: -holdDistance) : axis.stop()
+                        holdJog(direction: -1, pressed: pressed)
                     }
                     HoldButton(title: "Hold to jog +", systemImage: "chevron.right.2") { pressed in
-                        pressed ? axis.move(by: holdDistance) : axis.stop()
+                        holdJog(direction: 1, pressed: pressed)
                     }
                     Spacer()
                     TextField("Target steps", text: $target)
@@ -203,6 +203,27 @@ private struct JogPanel: View {
             }
             .disabled(!axis.isDriveEnabled)
             .padding(6)
+        }
+    }
+
+    /// Runs towards the soft limit when one is set, so the profile ramps down
+    /// and stops there; otherwise far enough to keep going until release.
+    private func holdJog(direction: Int32, pressed: Bool) {
+        guard pressed else {
+            axis.stop()
+            return
+        }
+        guard let snapshot = axis.snapshot else { return }
+
+        var distance = holdDistance
+        if snapshot.softLimitsActive {
+            let limit = direction > 0 ? snapshot.softLimitMax : snapshot.softLimitMin
+            // Steps left before the limit in the jog direction; none if
+            // already at or past it.
+            distance = max(0, direction * (limit - snapshot.positionSteps))
+        }
+        if distance > 0 {
+            axis.move(by: direction * distance)
         }
     }
 

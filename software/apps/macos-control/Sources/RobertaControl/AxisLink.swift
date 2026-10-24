@@ -8,6 +8,9 @@ struct AxisError: LocalizedError {
 }
 
 struct AxisSnapshot: Equatable, Sendable {
+    /// Soft limits are active only when min < max.
+    var softLimitsActive: Bool { softLimitMin < softLimitMax }
+
     var axisId: UInt32
     var statusWord: UInt32
     var faultWord: UInt32
@@ -16,6 +19,8 @@ struct AxisSnapshot: Equatable, Sendable {
     var targetSteps: Int32
     var velocityStepsPerSecond: Int32
     var stepCount: Int32
+    var softLimitMin: Int32
+    var softLimitMax: Int32
     var positionDegrees: Double
     var targetDegrees: Double
     var profileVelocity: Int32
@@ -40,6 +45,8 @@ struct AxisSnapshot: Equatable, Sendable {
         targetSteps = raw.target_position_steps
         velocityStepsPerSecond = raw.current_velocity_steps_per_second
         stepCount = raw.step_count
+        softLimitMin = raw.min_steps
+        softLimitMax = raw.max_steps
         positionDegrees = raw.current_position_deg
         targetDegrees = raw.target_position_deg
         profileVelocity = raw.velocity_steps_per_second

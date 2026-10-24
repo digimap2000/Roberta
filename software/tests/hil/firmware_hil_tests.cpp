@@ -83,6 +83,8 @@ protected:
         if (service_) {
             (void)service_->stop(false);
             std::this_thread::sleep_for(100ms);
+            // Leave no soft limits behind on a board that is also in use.
+            (void)axis_->set_limits(roberta::axis::AxisLimits{.min_steps = 0, .max_steps = 0});
             (void)service_->disable_drive();
         }
     }
@@ -210,6 +212,13 @@ protected:
             (void)command("reg bitset CONTROL_WORD 32");
             (void)command("reg bitclear CONTROL_WORD 2");
             (void)command("reg bitclear CONTROL_WORD 1");
+            // Leave no soft limits or test profile behind on a board that is
+            // also in use.
+            (void)command("reg write SOFT_LIMIT_MIN_STEPS 0");
+            (void)command("reg write SOFT_LIMIT_MAX_STEPS 0");
+            (void)command("reg write STAGED_TARGET_VELOCITY_STEPS_S 400");
+            (void)command("reg write STAGED_TARGET_ACCEL_STEPS_S2 800");
+            (void)command("reg write EXECUTE_AT_TICK_US 0");
             transport_->close();
         }
     }
