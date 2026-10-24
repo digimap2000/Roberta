@@ -190,7 +190,7 @@ static void print_help(void)
 {
     console_printf("commands: help status reg read <addr|name> reg readm <addr|name>... reg write <addr|name> <value> reg bitset <addr|name> <mask> reg bitclear <addr|name> <mask> reg dump\r\n");
     console_printf("aliases: echo on|off enable on|off outputs on|off zero home goto <steps> move <steps> vel <sps> accel <sps2> stop\r\n");
-    console_printf("diagnostics: diag (why the last reset happened) diag hang diag fault (test the watchdog)\r\n");
+    console_printf("diagnostics: diag (why the last reset happened) diag hang diag fault diag panic (test the watchdog)\r\n");
     console_printf("network: ping net [status] net scan net ssid <ssid> net pass <password> net name <name> net save net forget net watchdog <ms>\r\n");
 }
 
@@ -491,7 +491,7 @@ static void handle_line(char *line)
     }
 
     if (strcmp(command, "diag") == 0) {
-        char line[96];
+        char line[192];
         char *arg = strtok_r(NULL, " \t", &save);
 
         // Deliberate failures for proving the watchdog and fault capture.
@@ -499,6 +499,11 @@ static void handle_line(char *line)
             console_printf("hanging; watchdog reset in 2 s\r\n");
             while (true) {
             }
+        }
+        if (arg != NULL && strcmp(arg, "panic") == 0) {
+            console_printf("panicking\r\n");
+            sleep_ms(50);
+            panic("diag panic test");
         }
         if (arg != NULL && strcmp(arg, "fault") == 0) {
             console_printf("faulting\r\n");

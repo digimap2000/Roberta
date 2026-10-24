@@ -16,6 +16,9 @@ target_include_directories(app PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../config
 )
 
+# Route panic() (including lwIP assertions) through the crash recorder.
+target_compile_definitions(app PUBLIC PICO_PANIC_FUNCTION=axis_diag_panic)
+
 target_link_libraries(app PUBLIC
     pico_stdlib
     pico_cyw43_arch_lwip_threadsafe_background

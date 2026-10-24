@@ -103,17 +103,23 @@ hard fault reboots it straight away. Either way the outputs drop to their
 disabled state during the reset, and the board rejoins WiFi on its own.
 
 Before resetting, the board records which part of the main loop was running,
-or for a fault the faulting `pc` and `lr`. Ask it with `diag`, over USB or
+the faulting `pc` and `lr` for a hard fault, or the message and caller for a
+`panic()`. lwIP and CYW43 assertions arrive as panics, so their message is
+captured too. Ask it with `diag`, over USB or
 from the app's console:
 
 ```text
 diag reset=watchdog phase=net uptime_ms=8154
 diag reset=hardfault phase=net pc=0x10012abc lr=0x10011def uptime_ms=9923
+diag reset=panic phase=net caller=0x10019ac5 msg="..." uptime_ms=10904
 ```
+
+Roberta Control asks every board for `diag` when it connects, and logs any
+abnormal reset in its Events panel.
 
 Look up a fault address with
 `arm-none-eabi-addr2line -e build/firmware/axiscontroller/axiscontroller.elf <pc>`.
-`diag hang` and `diag fault` trigger each case on purpose.
+`diag hang`, `diag fault` and `diag panic` trigger each case on purpose.
 
 ## Notes
 
