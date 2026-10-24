@@ -127,8 +127,8 @@ Joint-space angle registers use signed `Q12.20` degrees stored in `i32`.
 | `2` | Start absolute move using `STAGED_TARGET_POSITION_STEPS` |
 | `3` | Start relative move using `STAGED_RELATIVE_MOVE_STEPS` |
 | `4` | Start homing |
-| `5` | Stop motion |
-| `6` | Emergency stop |
+| `5` | Stop motion: decelerate to rest at the active acceleration |
+| `6` | Emergency stop: halt immediately and latch a fault |
 | `7` | Clear fault |
 | `8` | Set current position to zero |
 | `9` | Apply `STAGED_JOINT_TARGET_DEG_Q12_20` by converting into step space |

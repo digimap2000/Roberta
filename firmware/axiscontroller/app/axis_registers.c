@@ -749,7 +749,7 @@ static AxisRegisterResult write_control_word(uint32_t value)
     }
 
     if (action_bits & CONTROL_ESTOP) {
-        result = submit_command(&(AxisCommand){.type = AXIS_COMMAND_STOP});
+        result = submit_command(&(AxisCommand){.type = AXIS_COMMAND_HALT});
         if (result != AXIS_REGISTER_RESULT_OK) {
             return result;
         }
@@ -829,14 +829,14 @@ void axis_registers_tick(uint64_t now_us)
     }
 
     if (status.moving && limit_blocks_direction(status.limits, status.direction)) {
-        (void)submit_command(&(AxisCommand){.type = AXIS_COMMAND_STOP});
+        (void)submit_command(&(AxisCommand){.type = AXIS_COMMAND_HALT});
         set_fault(FAULT_UNEXPECTED_LIMIT, ERROR_LIMIT_ACTIVE);
         g_registers.mode_word = MODE_IDLE;
         return;
     }
 
     if (status.moving && soft_limit_blocks_direction(status.current_position_steps, status.direction)) {
-        (void)submit_command(&(AxisCommand){.type = AXIS_COMMAND_STOP});
+        (void)submit_command(&(AxisCommand){.type = AXIS_COMMAND_HALT});
         set_fault(FAULT_SOFT_LIMIT, ERROR_SOFT_LIMIT);
         g_registers.mode_word = MODE_IDLE;
     }

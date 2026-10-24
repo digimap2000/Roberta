@@ -103,6 +103,11 @@ WiFi and console traffic can't disturb step spacing. Step pulses are 5 µs, the
 CL57T's minimum is 2.5 µs, and the step rate is capped at 20,000 steps/s. After
 a direction change the next step waits one tick so DIR settles first.
 
+`STOP` (from the app's STOP, Stop All, releasing hold-to-jog, or the link
+watchdog) decelerates at the configured acceleration, so an arm's momentum is
+ramped down. ESTOP, a hard limit switch, and running into a soft limit halt
+immediately instead, because travelling further would be worse.
+
 `diag timing` reports the steps emitted since the last `diag timing reset`, how
 many came out a full step period late, the longest gap between motion ticks,
 and the largest step backlog. A healthy run shows `late=0` and a gap close to

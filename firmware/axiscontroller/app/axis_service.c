@@ -198,6 +198,26 @@ static void tick_move(float dt_seconds)
     g_axis.step_accumulator += absolute_value(g_axis.current_velocity_steps_s) * dt_seconds;
 }
 
+// Retargets the axis to where it can come to rest, so the normal move
+// profile ramps it down instead of the velocity dropping to zero at once.
+static void begin_controlled_stop(void)
+{
+    const float speed = absolute_value(g_axis.current_velocity_steps_s);
+    const float accel = (float)g_axis.acceleration_steps_s2;
+
+    if ((!g_axis.moving && !g_axis.homing) || speed < 1.0f || accel <= 0.0f) {
+        stop_motion();
+        g_axis.target_position_steps = g_axis.current_position_steps;
+        return;
+    }
+
+    const int32_t stopping_steps = (int32_t)((speed * speed) / (2.0f * accel) + 0.999f);
+    g_axis.target_position_steps =
+        g_axis.current_position_steps + signum(g_axis.current_velocity_steps_s) * stopping_steps;
+    g_axis.homing = false;
+    g_axis.moving = true;
+}
+
 // Applies a command to the motion state. Callers hold interrupts off or run
 // in the tick interrupt.
 static AxisResult apply_command(const AxisCommand *command)
@@ -290,6 +310,10 @@ static AxisResult apply_command(const AxisCommand *command)
         return AXIS_RESULT_OK;
 
     case AXIS_COMMAND_STOP:
+        begin_controlled_stop();
+        return AXIS_RESULT_OK;
+
+    case AXIS_COMMAND_HALT:
         stop_motion();
         g_axis.target_position_steps = g_axis.current_position_steps;
         return AXIS_RESULT_OK;

@@ -17,7 +17,10 @@ typedef enum {
     AXIS_COMMAND_MOVE_BY,
     AXIS_COMMAND_HOME,
     AXIS_COMMAND_SET_ZERO,
+    // Decelerate to rest at the configured acceleration.
     AXIS_COMMAND_STOP,
+    // Stop dead: e-stop and limit hits, where travelling further is worse.
+    AXIS_COMMAND_HALT,
 } AxisCommandType;
 
 typedef struct {

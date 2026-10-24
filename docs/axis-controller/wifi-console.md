@@ -46,8 +46,9 @@ moving or homing:
 - the client disconnects or is replaced
 - the WiFi link drops
 
-Tripping issues a normal `STOP`. The drive stays enabled so the joint keeps
-holding torque. A gravity-loaded joint would drop if it de-energised. The trip
+Tripping issues a normal `STOP`, which decelerates at the configured
+acceleration rather than stopping dead. The drive stays enabled so the joint
+keeps holding torque. A gravity-loaded joint would drop if it de-energised. The trip
 is counted in `net status`.
 
 Hosts keep the link alive by polling status. A client that only sends motion

@@ -195,11 +195,13 @@ class Axis:
         if bits & CONTROL_CLEAR_FAULT:
             self.fault = 0
             self.last_error = 0
-        if bits & (CONTROL_STOP | CONTROL_ESTOP):
+        if bits & CONTROL_STOP:
+            self.decelerate()
+            self.cancel_scheduled()
+        if bits & CONTROL_ESTOP:
             self.stop()
             self.cancel_scheduled()
-            if bits & CONTROL_ESTOP:
-                self.levels &= ~CONTROL_MOTOR_ENABLE
+            self.levels &= ~CONTROL_MOTOR_ENABLE
         if bits & CONTROL_SET_ZERO:
             self.position, self.target, self.homed = 0.0, 0, True
             self.stop()
@@ -251,7 +253,18 @@ class Axis:
         else:
             self.homing, self.homed, self.moving = True, False, False
 
+    def decelerate(self):
+        """Controlled stop: retarget to where the profile can come to rest."""
+        accel = max(self.stored[0x0026], 1)
+        if not (self.moving or self.homing) or abs(self.velocity) < 1:
+            self.stop()
+            return
+        distance = int(self.velocity * self.velocity / (2 * accel) + 0.999)
+        self.target = round(self.position) + (distance if self.velocity > 0 else -distance)
+        self.homing, self.moving = False, True
+
     def stop(self):
+        """Immediate halt."""
         self.moving = self.homing = False
         self.velocity = 0.0
         self.target = round(self.position)
@@ -398,7 +411,7 @@ async def serve(args):
             last = now
             if active["last_rx"] and now - active["last_rx"] > WATCHDOG_S and (axis.moving or axis.homing):
                 print("watchdog: client silent, motion stopped")
-                axis.stop()
+                axis.decelerate()
                 active["last_rx"] = None
 
     async def client(reader, writer):
@@ -433,7 +446,7 @@ async def serve(args):
             if active["writer"] is writer:
                 if active["last_rx"] and (axis.moving or axis.homing):
                     print("watchdog: client disconnected, motion stopped")
-                    axis.stop()
+                    axis.decelerate()
                 active["writer"], active["last_rx"] = None, None
             writer.close()
             print(f"client {peer} gone")
