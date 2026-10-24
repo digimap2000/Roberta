@@ -50,7 +50,8 @@ distributable app.
 - **Motion profile**: velocity, acceleration and home velocity in steps.
 - **Console**: any firmware console command, such as `net status`,
   `reg dump` or `help`.
-- **Move Together** (toolbar, two or more connected axes): one relative move
+- **Move Together** (toolbar, or Motion ▸ Move Together… ⇧⌘M, with two or
+  more connected axes): one relative move
   per axis, scheduled to start at the same instant a few hundred ms ahead. It
   reports how far each axis's actual start was from the target, and the spread
   between axes.

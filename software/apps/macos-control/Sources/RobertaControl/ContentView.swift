@@ -3,7 +3,6 @@ import SwiftUI
 struct ContentView: View {
     @Bindable var workspace: Workspace
     @State private var newAxis = ""
-    @State private var showingMoveTogether = false
 
     var body: some View {
         NavigationSplitView {
@@ -45,24 +44,26 @@ struct ContentView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    showingMoveTogether = true
+                    workspace.isShowingMoveTogether = true
                 } label: {
                     Label("Move Together", systemImage: "arrow.left.and.right.circle")
+                        .labelStyle(.titleAndIcon)
                 }
-                .help("Start a move on several axes at the same instant")
-                .disabled(workspace.axes.filter(\.isConnected).count < 2)
+                .help("Start a move on several axes at the same instant (⇧⌘M)")
+                .disabled(!workspace.canMoveTogether)
             }
             ToolbarItem(placement: .primaryAction) {
                 Button(role: .destructive) {
                     workspace.stopAll()
                 } label: {
                     Label("Stop All", systemImage: "stop.circle.fill")
+                        .labelStyle(.titleAndIcon)
                 }
                 .tint(.red)
                 .help("Stop every connected axis (⌘.)")
             }
         }
-        .sheet(isPresented: $showingMoveTogether) {
+        .sheet(isPresented: $workspace.isShowingMoveTogether) {
             MoveTogetherView(workspace: workspace)
         }
     }

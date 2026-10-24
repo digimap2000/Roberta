@@ -1,6 +1,7 @@
 # app layer
 add_library(app STATIC
     axis_console.c
+    axis_diag.c
     axis_hw.c
     axis_net.c
     axis_registers.c
@@ -25,4 +26,5 @@ target_link_libraries(app PUBLIC
     hardware_flash
     hardware_gpio
     hardware_uart
+    hardware_watchdog
 )

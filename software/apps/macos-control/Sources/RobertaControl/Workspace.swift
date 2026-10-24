@@ -12,9 +12,14 @@ final class Workspace {
 
     private(set) var axes: [AxisModel] = []
     var selection: AxisModel.ID?
+    var isShowingMoveTogether = false
     private(set) var browserState = "Starting discovery"
 
     private var browser: NWBrowser?
+
+    var canMoveTogether: Bool {
+        axes.filter(\.isConnected).count >= 2
+    }
 
     var selectedAxis: AxisModel? {
         axes.first { $0.id == selection }

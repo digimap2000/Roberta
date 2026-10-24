@@ -242,6 +242,13 @@ protected:
         EXPECT_NE(response->find(expected_substring), std::string::npos) << *response;
     }
 
+    // Earlier tests leave soft limits configured; min == max turns them off.
+    void disable_soft_limits()
+    {
+        require_command_contains("reg write SOFT_LIMIT_MIN_STEPS 0", "ok");
+        require_command_contains("reg write SOFT_LIMIT_MAX_STEPS 0", "ok");
+    }
+
     [[nodiscard]] std::uint32_t read_register(roberta::core::AxisRegister reg)
     {
         auto response = command(std::format("reg read {}", roberta::core::register_name(reg)));
@@ -384,7 +391,7 @@ TEST_F(FirmwareHilRawConsoleTests, RecoversAfterOverlongConsoleLine)
 {
     const auto before = read_register(roberta::core::AxisRegister::control_word);
     require_command_contains(
-        std::string("reg bitclear CONTROL_WORD 1") + std::string(220, ' '),
+        std::string("reg bitclear CONTROL_WORD 1") + std::string(300, ' '),
         "line-too-long",
         3s);
     EXPECT_EQ(read_register(roberta::core::AxisRegister::control_word), before);
@@ -459,6 +466,8 @@ TEST_F(FirmwareHilRawConsoleTests, RejectsMovesPastConfiguredSoftLimits)
 TEST_F(FirmwareHilRawConsoleTests, AbortsMotionWhenSoftLimitBecomesActive)
 {
     require_command_contains("reg bitset CONTROL_WORD 128", "ok");
+    // The limits below are absolute, so start from zero wherever earlier runs left the axis.
+    require_command_contains("reg bitset CONTROL_WORD 256", "ok");
     require_command_contains("reg write SOFT_LIMIT_MIN_STEPS -1000", "ok");
     require_command_contains("reg write SOFT_LIMIT_MAX_STEPS 1000", "ok");
     require_command_contains("reg write STAGED_TARGET_VELOCITY_STEPS_S 50", "ok");
@@ -494,6 +503,9 @@ TEST_F(FirmwareHilRawConsoleTests, ReportsOnlyImplementedCapabilities)
 TEST_F(FirmwareHilRawConsoleTests, StartsRelativeMoveAtScheduledTick)
 {
     static constexpr std::uint32_t status_start_scheduled = 1u << 14;
+    disable_soft_limits();
+    require_command_contains("reg write STAGED_TARGET_VELOCITY_STEPS_S 400", "ok");
+    require_command_contains("reg write STAGED_TARGET_ACCEL_STEPS_S2 800", "ok");
 
     const auto start_position = static_cast<std::int32_t>(
         read_register(roberta::core::AxisRegister::current_position_steps));
@@ -516,6 +528,7 @@ TEST_F(FirmwareHilRawConsoleTests, StartsRelativeMoveAtScheduledTick)
 
 TEST_F(FirmwareHilRawConsoleTests, RejectsScheduledStartsLateOrTooFarAhead)
 {
+    disable_soft_limits();
     const auto now = read_register(roberta::core::AxisRegister::local_tick_us);
     require_command_contains("reg write STAGED_RELATIVE_MOVE_STEPS 10", "ok");
 

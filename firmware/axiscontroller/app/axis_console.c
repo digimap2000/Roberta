@@ -1,5 +1,6 @@
 #include "axis_console.h"
 
+#include "axis_diag.h"
 #include "axis_net.h"
 #include "axis_registers.h"
 
@@ -189,6 +190,7 @@ static void print_help(void)
 {
     console_printf("commands: help status reg read <addr|name> reg readm <addr|name>... reg write <addr|name> <value> reg bitset <addr|name> <mask> reg bitclear <addr|name> <mask> reg dump\r\n");
     console_printf("aliases: echo on|off enable on|off outputs on|off zero home goto <steps> move <steps> vel <sps> accel <sps2> stop\r\n");
+    console_printf("diagnostics: diag (why the last reset happened) diag hang diag fault (test the watchdog)\r\n");
     console_printf("network: ping net [status] net scan net ssid <ssid> net pass <password> net name <name> net save net forget net watchdog <ms>\r\n");
 }
 
@@ -484,6 +486,28 @@ static void handle_line(char *line)
             g_echo = flag;
             console_printf("OK\r\n");
         }
+        print_prompt();
+        return;
+    }
+
+    if (strcmp(command, "diag") == 0) {
+        char line[96];
+        char *arg = strtok_r(NULL, " \t", &save);
+
+        // Deliberate failures for proving the watchdog and fault capture.
+        if (arg != NULL && strcmp(arg, "hang") == 0) {
+            console_printf("hanging; watchdog reset in 2 s\r\n");
+            while (true) {
+            }
+        }
+        if (arg != NULL && strcmp(arg, "fault") == 0) {
+            console_printf("faulting\r\n");
+            sleep_ms(50);
+            ((void (*)(void))0xfffffff1u)();
+        }
+
+        axis_diag_describe(line, sizeof(line));
+        console_printf("diag %s uptime_ms=%lu\r\n", line, (unsigned long)(time_us_64() / 1000u));
         print_prompt();
         return;
     }

@@ -96,6 +96,25 @@ or:
    quit the app or turn off the Mac's WiFi. The axis should stop within about
    a second, and `net status` should show `trips=1`.
 
+## Watchdog And Crash Diagnostics
+
+A hardware watchdog reboots the board if the main loop stalls for 2 s, and a
+hard fault reboots it straight away. Either way the outputs drop to their
+disabled state during the reset, and the board rejoins WiFi on its own.
+
+Before resetting, the board records which part of the main loop was running,
+or for a fault the faulting `pc` and `lr`. Ask it with `diag`, over USB or
+from the app's console:
+
+```text
+diag reset=watchdog phase=net uptime_ms=8154
+diag reset=hardfault phase=net pc=0x10012abc lr=0x10011def uptime_ms=9923
+```
+
+Look up a fault address with
+`arm-none-eabi-addr2line -e build/firmware/axiscontroller/axiscontroller.elf <pc>`.
+`diag hang` and `diag fault` trigger each case on purpose.
+
 ## Notes
 
 - Degree readouts use `STEPS_PER_MOTOR_REV` and the gear-ratio registers. They

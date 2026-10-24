@@ -24,6 +24,9 @@ struct RobertaControlApp: App {
         }
         .commands {
             CommandMenu("Motion") {
+                Button("Move Together…") { workspace.isShowingMoveTogether = true }
+                    .keyboardShortcut("m", modifiers: [.command, .shift])
+                    .disabled(!workspace.canMoveTogether)
                 Button("Stop All Axes") { workspace.stopAll() }
                     .keyboardShortcut(".", modifiers: .command)
             }

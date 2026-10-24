@@ -298,16 +298,14 @@ roberta::core::Status PosixTextTransport::open()
     }
 
     // Typed-character echo is for people at a terminal; it would leak request
-    // text into responses. Older firmware answers "unknown command", which is
-    // harmless.
-    static constexpr std::string_view k_echo_off = "echo off\r\n";
-    status = write_all(fd_, std::span<const std::uint8_t>(
-        reinterpret_cast<const std::uint8_t*>(k_echo_off.data()), k_echo_off.size()));
-    if (!status) {
+    // text into responses. Go through transact so stale prompts left by the
+    // sync above are skipped and the reply is fully consumed. Older firmware
+    // answers "unknown command", which is harmless.
+    auto echo = transact(TextExchange{.request_line = "echo off", .timeout = std::chrono::milliseconds(1000)});
+    if (!echo && echo.error().code != roberta::core::ErrorCode::timeout) {
         close();
-        return status;
+        return std::unexpected(echo.error());
     }
-    (void)read_until_prompt(fd_, std::chrono::milliseconds(500));
     return roberta::core::ok_status();
 }
 
