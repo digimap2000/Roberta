@@ -77,10 +77,13 @@ them. Use `net forget` to clear them.
 
 - The CYW43 radio runs in performance power mode. The default power save adds
   100–300 ms of receive latency.
-- Step generation still runs in the main loop. Network work happens in the
-  CYW43 background interrupt and short critical sections, so expect a few tens
-  of microseconds of step jitter. Move step generation to PIO or a timer before
-  chasing high step rates.
+- Motion runs in a 50 µs hardware-timer interrupt at the highest priority,
+  above the CYW43 and USB interrupts. Network and console work therefore can't
+  delay steps: with the app polling, the worst gap between motion updates
+  measured 61 µs, down from about 2 ms when steps came from the main loop.
+  Steps are still quantised to the 50 µs tick, so the step rate is capped at
+  20,000 steps/s and the period wobbles by up to one tick. Fire steps from
+  their own timer or from PIO if that matters at high speeds.
 
 ## Synchronised Starts
 
@@ -98,8 +101,8 @@ and expresses one shared start time in each axis's own clock.
    converts it per axis. On each axis it writes `EXECUTE_AT_TICK_US`, the
    staged move, and the `CONTROL_WORD` move bit. The axis arms the move and
    sets status bit 14 while it waits.
-3. **Fire.** The axis main loop starts the move when its tick reaches the
-   target, within about 100 µs. It records the actual tick in
+3. **Fire.** The motion interrupt starts the move on the first 50 µs tick at
+   or after the target. It records the actual tick in
    `LAST_START_TICK_US`, which the host converts back to measure the spread.
 
 A scheduled start is refused with error `106` if it is already in the past,

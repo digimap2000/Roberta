@@ -96,6 +96,18 @@ or:
    quit the app or turn off the Mac's WiFi. The axis should stop within about
    a second, and `net status` should show `trips=1`.
 
+## Step Timing
+
+Motion runs in a 50 µs hardware-timer interrupt at the highest priority, so
+WiFi and console traffic can't disturb step spacing. Step pulses are 5 µs, the
+CL57T's minimum is 2.5 µs, and the step rate is capped at 20,000 steps/s. After
+a direction change the next step waits one tick so DIR settles first.
+
+`diag timing` reports the steps emitted since the last `diag timing reset`, how
+many came out a full step period late, the longest gap between motion ticks,
+and the largest step backlog. A healthy run shows `late=0` and a gap close to
+50 µs.
+
 ## Watchdog And Crash Diagnostics
 
 A hardware watchdog reboots the board if the main loop stalls for 2 s, and a

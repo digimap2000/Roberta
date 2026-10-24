@@ -3,6 +3,7 @@
 #include "axis_diag.h"
 #include "axis_net.h"
 #include "axis_registers.h"
+#include "axis_service.h"
 
 #include "pico/stdlib.h"
 
@@ -190,7 +191,7 @@ static void print_help(void)
 {
     console_printf("commands: help status reg read <addr|name> reg readm <addr|name>... reg write <addr|name> <value> reg bitset <addr|name> <mask> reg bitclear <addr|name> <mask> reg dump\r\n");
     console_printf("aliases: echo on|off enable on|off outputs on|off zero home goto <steps> move <steps> vel <sps> accel <sps2> stop\r\n");
-    console_printf("diagnostics: diag (why the last reset happened) diag hang diag fault diag panic (test the watchdog)\r\n");
+    console_printf("diagnostics: diag (why the last reset happened) diag timing [reset] (step jitter) diag hang diag fault diag panic (test the watchdog)\r\n");
     console_printf("network: ping net [status] net scan net ssid <ssid> net pass <password> net name <name> net save net forget net watchdog <ms>\r\n");
 }
 
@@ -499,6 +500,23 @@ static void handle_line(char *line)
             console_printf("hanging; watchdog reset in 2 s\r\n");
             while (true) {
             }
+        }
+        if (arg != NULL && strcmp(arg, "timing") == 0) {
+            AxisTimingStats stats;
+            char *option = strtok_r(NULL, " \t", &save);
+
+            if (option != NULL && strcmp(option, "reset") == 0) {
+                axis_service_reset_timing();
+            }
+            axis_service_get_timing(&stats);
+            console_printf("timing steps=%lu late=%lu max_gap_us=%lu max_backlog=%lu.%03lu\r\n",
+                           (unsigned long)stats.steps,
+                           (unsigned long)stats.late_steps,
+                           (unsigned long)stats.max_tick_gap_us,
+                           (unsigned long)(stats.max_backlog_milli_steps / 1000u),
+                           (unsigned long)(stats.max_backlog_milli_steps % 1000u));
+            print_prompt();
+            return;
         }
         if (arg != NULL && strcmp(arg, "panic") == 0) {
             console_printf("panicking\r\n");

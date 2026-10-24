@@ -188,11 +188,9 @@ typedef struct {
     uint32_t sync_status_word;
     uint64_t boot_time_us;
     uint64_t local_tick_us;
-    bool scheduled_armed;
-    uint32_t scheduled_action_bits;
-    uint32_t scheduled_at_tick_us;
-    int32_t scheduled_target_position_steps;
-    int32_t scheduled_relative_move_steps;
+    // Motion bits of the start armed in the motion service, for bookkeeping
+    // once it fires.
+    uint32_t scheduled_motion_bits;
     uint32_t last_start_tick_us;
 } AxisRegisterState;
 
@@ -425,7 +423,7 @@ static uint32_t build_status_word(const AxisStatus *status, AxisOutputState outp
     if (outputs.brake_active) {
         word |= STATUS_BRAKE_APPLIED;
     }
-    if (g_registers.scheduled_armed) {
+    if (axis_service_schedule_armed()) {
         word |= STATUS_START_SCHEDULED;
     }
     if (outputs.fan_active) {
@@ -561,8 +559,8 @@ static AxisRegisterResult validate_schedule(uint32_t action_bits)
 
 static void cancel_scheduled_start(void)
 {
-    g_registers.scheduled_armed = false;
-    g_registers.scheduled_action_bits = 0;
+    axis_service_cancel_scheduled();
+    g_registers.scheduled_motion_bits = 0;
 }
 
 static AxisRegisterResult validate_motion_request(
@@ -649,30 +647,36 @@ static void snapshot_active_step_command(const AxisStatus *status)
     g_registers.mode_word = current_mode_word(status);
 }
 
-static AxisRegisterResult start_motion(uint32_t motion_bits, int32_t target_position_steps, int32_t relative_move_steps)
+static AxisCommand motion_command(uint32_t motion_bits)
+{
+    if (motion_bits & CONTROL_HOME) {
+        return (AxisCommand){.type = AXIS_COMMAND_HOME};
+    }
+    if (motion_bits & CONTROL_MOVE_ABSOLUTE) {
+        return (AxisCommand){.type = AXIS_COMMAND_MOVE_TO, .steps = g_registers.staged_target_position_steps};
+    }
+    return (AxisCommand){.type = AXIS_COMMAND_MOVE_BY, .steps = g_registers.staged_relative_move_steps};
+}
+
+static void note_motion_started(uint32_t motion_bits, uint32_t started_tick_us)
 {
     AxisStatus status;
-    AxisRegisterResult result;
-    AxisCommand command;
 
-    if (motion_bits & CONTROL_HOME) {
-        command = (AxisCommand){.type = AXIS_COMMAND_HOME};
-    } else if (motion_bits & CONTROL_MOVE_ABSOLUTE) {
-        command = (AxisCommand){.type = AXIS_COMMAND_MOVE_TO, .steps = target_position_steps};
-    } else {
-        command = (AxisCommand){.type = AXIS_COMMAND_MOVE_BY, .steps = relative_move_steps};
-    }
-
-    result = submit_command(&command);
-    if (result != AXIS_REGISTER_RESULT_OK) {
-        return result;
-    }
-
-    g_registers.last_start_tick_us = local_tick_now();
+    g_registers.last_start_tick_us = started_tick_us;
     axis_service_get_status(&status);
     snapshot_active_step_command(&status);
     g_registers.mode_word = (motion_bits & CONTROL_HOME) ? MODE_HOMING : MODE_STEP_POSITION;
-    return AXIS_REGISTER_RESULT_OK;
+}
+
+static AxisRegisterResult start_motion(uint32_t motion_bits)
+{
+    const AxisCommand command = motion_command(motion_bits);
+    const AxisRegisterResult result = submit_command(&command);
+
+    if (result == AXIS_REGISTER_RESULT_OK) {
+        note_motion_started(motion_bits, local_tick_now());
+    }
+    return result;
 }
 
 static AxisRegisterResult write_control_word(uint32_t value)
@@ -770,17 +774,14 @@ static AxisRegisterResult write_control_word(uint32_t value)
     cancel_scheduled_start();
 
     if (g_registers.execute_at_tick_us != 0) {
-        g_registers.scheduled_armed = true;
-        g_registers.scheduled_action_bits = motion_bits;
-        g_registers.scheduled_at_tick_us = g_registers.execute_at_tick_us;
-        g_registers.scheduled_target_position_steps = g_registers.staged_target_position_steps;
-        g_registers.scheduled_relative_move_steps = g_registers.staged_relative_move_steps;
+        // The motion interrupt starts it on the exact tick.
+        const AxisCommand command = motion_command(motion_bits);
+        axis_service_schedule(&command, g_registers.execute_at_tick_us);
+        g_registers.scheduled_motion_bits = motion_bits;
         return AXIS_REGISTER_RESULT_OK;
     }
 
-    return start_motion(motion_bits,
-                        g_registers.staged_target_position_steps,
-                        g_registers.staged_relative_move_steps);
+    return start_motion(motion_bits);
 }
 
 void axis_registers_init(uint64_t now_us)
@@ -813,13 +814,13 @@ void axis_registers_tick(uint64_t now_us)
 
     g_registers.local_tick_us = now_us;
 
-    if (g_registers.scheduled_armed &&
-        (int32_t)((uint32_t)now_us - g_registers.scheduled_at_tick_us) >= 0) {
-        const uint32_t motion_bits = g_registers.scheduled_action_bits;
-        cancel_scheduled_start();
-        (void)start_motion(motion_bits,
-                           g_registers.scheduled_target_position_steps,
-                           g_registers.scheduled_relative_move_steps);
+    uint32_t started_tick_us;
+    AxisResult scheduled_result;
+    if (axis_service_take_scheduled_start(&started_tick_us, &scheduled_result)) {
+        if (translate_service_result(scheduled_result) == AXIS_REGISTER_RESULT_OK) {
+            note_motion_started(g_registers.scheduled_motion_bits, started_tick_us);
+        }
+        g_registers.scheduled_motion_bits = 0;
     }
 
     axis_service_get_status(&status);

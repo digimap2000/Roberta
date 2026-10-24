@@ -52,7 +52,28 @@ typedef struct {
     AxisLimitState limits;
 } AxisStatus;
 
+// Step timing while moving: how far the polled step loop falls behind.
+// A step is "late" when at least one further step was already owed when it
+// was emitted, i.e. it came out a full step period or more behind schedule.
+typedef struct {
+    uint32_t steps;
+    uint32_t late_steps;
+    uint32_t max_tick_gap_us;
+    uint32_t max_backlog_milli_steps;
+} AxisTimingStats;
+
+void axis_service_get_timing(AxisTimingStats *stats);
+void axis_service_reset_timing(void);
+
+// Starts the 50 us motion interrupt; motion then runs without main-loop help.
 void axis_service_init(uint64_t now_us);
 AxisResult axis_service_submit(const AxisCommand *command);
-void axis_service_tick(uint64_t now_us);
 void axis_service_get_status(AxisStatus *status);
+
+// Arms a command to start, from the motion interrupt, when the 32-bit local
+// microsecond tick reaches at_tick_us. A newer schedule replaces it.
+void axis_service_schedule(const AxisCommand *command, uint32_t at_tick_us);
+void axis_service_cancel_scheduled(void);
+bool axis_service_schedule_armed(void);
+// Reports, once, that a scheduled command was applied: when, and its result.
+bool axis_service_take_scheduled_start(uint32_t *started_tick_us, AxisResult *result);

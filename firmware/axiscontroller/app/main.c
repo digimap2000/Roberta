@@ -22,8 +22,6 @@ int main(void)
 
     while (true) {
         uint64_t now_us = time_us_64();
-        axis_diag_mark(AXIS_DIAG_PHASE_SERVICE);
-        axis_service_tick(now_us);
         axis_diag_mark(AXIS_DIAG_PHASE_REGISTERS);
         axis_registers_tick(now_us);
         axis_diag_mark(AXIS_DIAG_PHASE_CONSOLE);
