@@ -8,6 +8,8 @@ import AppKit
 ///   leave the real boards alone.
 /// - `ROBERTA_CONTROL_MOVE_TOGETHER=<steps>` enables every connected axis and
 ///   runs one coordinated move a few seconds after launch, tracing the result.
+/// - `ROBERTA_CONTROL_PLAY_TUNE=1` enables every connected axis and plays
+///   Frère Jacques a few seconds after launch.
 /// - `ROBERTA_CONTROL_TRACE=1` prints connection state changes and errors.
 /// - `ROBERTA_CONTROL_CAPTURE=/path/shot.png` renders the main window to a PNG
 ///   a few seconds after launch (no screen-recording permission needed).
@@ -43,6 +45,17 @@ enum DevHooks {
                 trace("move together \(result.name): start \(result.startOffsetMs.map { String(format: "%+.3f ms", $0) } ?? "-")"
                       + " rtt \(result.roundTripUs.map(String.init) ?? "-") us \(result.error ?? "")")
             }
+        }
+    }
+
+    static func scheduleTuneIfRequested(_ workspace: Workspace) {
+        guard environment["ROBERTA_CONTROL_PLAY_TUNE"] == "1" else { return }
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            workspace.axes.filter(\.isConnected).forEach { $0.enableDrive() }
+            try? await Task.sleep(for: .seconds(1))
+            workspace.playFrereJacques()
         }
     }
 

@@ -19,6 +19,7 @@ struct RobertaControlApp: App {
                     NSApplication.shared.activate()
                     DevHooks.addRequestedAxes(to: workspace)
                     DevHooks.scheduleMoveTogetherIfRequested(workspace)
+                    DevHooks.scheduleTuneIfRequested(workspace)
                     DevHooks.scheduleCaptureIfRequested()
                 }
         }
@@ -27,6 +28,10 @@ struct RobertaControlApp: App {
                 Button("Move Together…") { workspace.isShowingMoveTogether = true }
                     .keyboardShortcut("m", modifiers: [.command, .shift])
                     .disabled(!workspace.canMoveTogether)
+                Button("Play Frère Jacques") { workspace.playFrereJacques() }
+                    .keyboardShortcut("j", modifiers: [.command, .shift])
+                    .disabled(!workspace.canPlayTune)
+                Divider()
                 Button("Stop All Axes") { workspace.stopAll() }
                     .keyboardShortcut(".", modifiers: .command)
             }

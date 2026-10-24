@@ -63,6 +63,17 @@ struct ContentView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
+                    workspace.isPlayingTune ? workspace.stopTune() : workspace.playFrereJacques()
+                } label: {
+                    Label(workspace.isPlayingTune ? "Stop Song" : "Frère Jacques",
+                          systemImage: workspace.isPlayingTune ? "stop.circle" : "music.note")
+                        .labelStyle(.titleAndIcon)
+                }
+                .help("Play Frère Jacques as a round on the first two joints (drives must be enabled)")
+                .disabled(!workspace.isPlayingTune && !workspace.canPlayTune)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
                     showingEvents.toggle()
                 } label: {
                     Label(eventsTitle, systemImage: "list.bullet.rectangle")

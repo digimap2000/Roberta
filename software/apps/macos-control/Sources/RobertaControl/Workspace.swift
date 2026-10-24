@@ -16,6 +16,8 @@ final class Workspace {
     let events = EventLog()
     var selection: AxisModel.ID?
     var isShowingMoveTogether = false
+    var isPlayingTune = false
+    var tuneTask: Task<Void, Never>?
     private(set) var browserState = "Starting discovery"
 
     private var browser: NWBrowser?
@@ -147,6 +149,7 @@ final class Workspace {
     }
 
     func stopAll() {
+        stopTune()
         for axis in axes where axis.isConnected {
             axis.stop()
         }

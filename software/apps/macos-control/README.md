@@ -68,6 +68,10 @@ distributable app.
   between axes.
 - Faults are shown in words with a **Clear** button. Jog and Home stay greyed
   out until the drive is enabled.
+- **Frère Jacques** (toolbar, or Motion ▸ Play Frère Jacques ⇧⌘J): the two
+  lowest-numbered joints with drives enabled sing it as a round, using step
+  rate as pitch. Stop All or ⌘. stops the song; each axis's profile is put
+  back afterwards.
 - **⌘.**, or **Stop All** in the toolbar, stops every connected axis.
 
 ## Without Hardware
@@ -93,6 +97,7 @@ the panic, which exercises reconnection and the Events log. Add
 | `ROBERTA_CONTROL_AXES=tcp://a,tcp://b` | Add and connect these axes at launch |
 | `ROBERTA_CONTROL_NO_DISCOVERY=1` | Skip Bonjour, so tests with fake axes leave the real boards alone |
 | `ROBERTA_CONTROL_MOVE_TOGETHER=<steps>` | Enable every connected axis and run one coordinated move after launch; results go to the trace |
+| `ROBERTA_CONTROL_PLAY_TUNE=1` | Enable every connected axis and play Frère Jacques after launch |
 | `ROBERTA_CONTROL_TRACE=1` | Print connection state changes and errors to stderr |
 | `ROBERTA_CONTROL_CAPTURE=/path.png` | Render the window to a PNG after `ROBERTA_CONTROL_CAPTURE_DELAY` seconds (default 4) |
 | `ROBERTA_FFI_LIB_DIR` | Build-time override for where to find `libroberta_desktop_ffi` |
