@@ -109,6 +109,29 @@ uint8_t roberta_axis_client_set_motion_profile(
     char* error_buffer,
     size_t error_buffer_len);
 
+/* Coordinated starts. roberta_host_clock_us() is the host's steady clock.
+ * Sync each axis's clock shortly before scheduling (the estimate is good to
+ * about half the reported round trip), then schedule every axis for the same
+ * host time a few hundred milliseconds ahead. */
+int64_t roberta_host_clock_us(void);
+uint8_t roberta_axis_client_sync_clock(
+    roberta_axis_client_t* client,
+    uint32_t* out_round_trip_us,
+    char* error_buffer,
+    size_t error_buffer_len);
+uint8_t roberta_axis_client_move_by_steps_at(
+    roberta_axis_client_t* client,
+    int32_t delta_steps,
+    int64_t host_time_us,
+    char* error_buffer,
+    size_t error_buffer_len);
+/* When the most recent move actually started, in host clock microseconds. */
+uint8_t roberta_axis_client_last_start_host_us(
+    roberta_axis_client_t* client,
+    int64_t* out_host_us,
+    char* error_buffer,
+    size_t error_buffer_len);
+
 /* Sends one raw console line (for example "net status") and returns the
  * response text with prompts removed. */
 uint8_t roberta_axis_client_command(

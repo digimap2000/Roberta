@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 
+#include <roberta/axis/clock_sync.hpp>
 #include <roberta/axis/controller_axis_device.hpp>
 #include <roberta/core/registers.hpp>
 #include <roberta/protocol/register_transport.hpp>
@@ -212,6 +213,48 @@ public:
         });
     }
 
+    [[nodiscard]] roberta::core::Result<std::chrono::microseconds> sync_clock()
+    {
+        auto estimate = roberta::axis::estimate_clock(
+            [this] { return register_transport_.read_register(roberta::core::AxisRegister::local_tick_us); });
+        if (!estimate) {
+            return std::unexpected(estimate.error());
+        }
+        clock_ = *estimate;
+        return estimate->round_trip;
+    }
+
+    [[nodiscard]] roberta::core::Status move_by_steps_at(std::int32_t delta_steps, std::int64_t host_time_us)
+    {
+        if (!clock_) {
+            return roberta::core::fail_status(
+                roberta::core::ErrorCode::failed_precondition, "axis clock not synced");
+        }
+
+        // A tick of 0 means "start now", so nudge the rare exact match.
+        auto tick = roberta::axis::host_to_local_tick(*clock_, host_time_us);
+        if (tick == 0) {
+            tick = 1;
+        }
+        return device_.move_by_steps(delta_steps, roberta::axis::ScheduledAxisAction{
+            .execute_at = std::chrono::microseconds(tick),
+        });
+    }
+
+    [[nodiscard]] roberta::core::Result<std::int64_t> last_start_host_us()
+    {
+        if (!clock_) {
+            return std::unexpected(roberta::core::make_error(
+                roberta::core::ErrorCode::failed_precondition, "axis clock not synced"));
+        }
+
+        auto tick = register_transport_.read_register(roberta::core::AxisRegister::last_start_tick_us);
+        if (!tick) {
+            return std::unexpected(tick.error());
+        }
+        return roberta::axis::local_tick_to_host(*clock_, *tick, roberta::axis::host_clock_us());
+    }
+
     [[nodiscard]] roberta::core::Result<std::string> command(std::string line)
     {
         if (!device_.is_connected()) {
@@ -372,6 +415,7 @@ private:
     roberta::protocol::ConsoleRegisterTransport register_transport_;
     roberta::axis::ControllerAxisDevice device_;
     std::optional<double> steps_per_degree_;
+    std::optional<roberta::axis::ClockEstimate> clock_;
 };
 
 } // namespace
@@ -612,6 +656,66 @@ std::uint8_t roberta_axis_client_set_motion_profile(
         velocity_steps_per_second, accel_steps_per_second_squared, home_velocity_steps_per_second);
     write_error_from_result(error_buffer, error_buffer_len, status);
     return static_cast<std::uint8_t>(status.has_value());
+}
+
+std::int64_t roberta_host_clock_us(void)
+{
+    return roberta::axis::host_clock_us();
+}
+
+std::uint8_t roberta_axis_client_sync_clock(
+    roberta_axis_client_t* client,
+    std::uint32_t* out_round_trip_us,
+    char* error_buffer,
+    std::size_t error_buffer_len)
+{
+    if (client == nullptr) {
+        write_error(error_buffer, error_buffer_len, "axis client is null");
+        return 0;
+    }
+
+    auto round_trip = client->impl.sync_clock();
+    write_error_from_result(error_buffer, error_buffer_len, round_trip);
+    if (round_trip && out_round_trip_us != nullptr) {
+        *out_round_trip_us = static_cast<std::uint32_t>(round_trip->count());
+    }
+    return static_cast<std::uint8_t>(round_trip.has_value());
+}
+
+std::uint8_t roberta_axis_client_move_by_steps_at(
+    roberta_axis_client_t* client,
+    std::int32_t delta_steps,
+    std::int64_t host_time_us,
+    char* error_buffer,
+    std::size_t error_buffer_len)
+{
+    if (client == nullptr) {
+        write_error(error_buffer, error_buffer_len, "axis client is null");
+        return 0;
+    }
+
+    const auto status = client->impl.move_by_steps_at(delta_steps, host_time_us);
+    write_error_from_result(error_buffer, error_buffer_len, status);
+    return static_cast<std::uint8_t>(status.has_value());
+}
+
+std::uint8_t roberta_axis_client_last_start_host_us(
+    roberta_axis_client_t* client,
+    std::int64_t* out_host_us,
+    char* error_buffer,
+    std::size_t error_buffer_len)
+{
+    if (client == nullptr) {
+        write_error(error_buffer, error_buffer_len, "axis client is null");
+        return 0;
+    }
+
+    auto host_us = client->impl.last_start_host_us();
+    write_error_from_result(error_buffer, error_buffer_len, host_us);
+    if (host_us && out_host_us != nullptr) {
+        *out_host_us = *host_us;
+    }
+    return static_cast<std::uint8_t>(host_us.has_value());
 }
 
 std::uint8_t roberta_axis_client_command(

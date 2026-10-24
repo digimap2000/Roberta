@@ -82,9 +82,42 @@ them. Use `net forget` to clear them.
   of microseconds of step jitter. Move step generation to PIO or a timer before
   chasing high step rates.
 
+## Synchronised Starts
+
+Axes keep their own clocks. Nothing on the controller disciplines them.
+Instead, the host measures each axis's offset just before a coordinated move
+and expresses one shared start time in each axis's own clock.
+
+1. **Estimate the offset.** The host reads `LOCAL_TICK_US` 8 times, noting its
+   own steady clock before and after each read. It keeps the sample with the
+   shortest round trip, assumes the tick was taken at that sample's midpoint,
+   and records `offset = local_tick - host_us` (modulo 2^32). The error is at
+   most half that round trip, about 3 ms worst case on WiFi and usually far
+   less.
+2. **Arm.** The host picks one start time a few hundred milliseconds ahead and
+   converts it per axis. On each axis it writes `EXECUTE_AT_TICK_US`, the
+   staged move, and the `CONTROL_WORD` move bit. The axis arms the move and
+   sets status bit 14 while it waits.
+3. **Fire.** The axis main loop starts the move when its tick reaches the
+   target, within about 100 µs. It records the actual tick in
+   `LAST_START_TICK_US`, which the host converts back to measure the spread.
+
+A scheduled start is refused with error `106` if it is already in the past,
+and with `107` if it is more than 5 s ahead, which catches stale or wrapped
+estimates. A newer motion command, STOP, ESTOP, disabling the drive, or the
+link watchdog all cancel a waiting start. A one-way UDP broadcast can't
+measure link delay, so it would have been less accurate than this two-way
+probe.
+
+The host side is `roberta::axis::estimate_clock` in the core,
+`roberta_axis_client_sync_clock` / `_move_by_steps_at` /
+`_last_start_host_us` in the C API, and **Move Together** in Roberta Control.
+
+Crystal drift between boards is tens of ppm, so an estimate made just before
+a move stays good to microseconds over the lead time. Re-estimate before each
+coordinated move rather than relying on an old one.
+
 ## Not Yet Done
 
-- Synchronised multi-axis starts. `EXECUTE_AT_TICK_US` exists, but the axes
-  share no time base over WiFi yet. The likely route is a UDP time broadcast
-  that fills the role the RS485 `SYNC_TIME` frame had.
-- A binary or UDP fast path for streamed setpoints.
+- A binary or UDP fast path for streamed setpoints. Synchronised starts cover
+  point-to-point moves, not continuous coordinated paths.

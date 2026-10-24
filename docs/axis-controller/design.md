@@ -81,6 +81,11 @@ controller to understand whole-robot kinematics.
 
 ## Distributed Sync
 
+> The WiFi build does not use the broadcast model below. The host measures
+> each axis's clock offset with a two-way probe just before scheduling. See
+> [WiFi Console Transport](./wifi-console.md#synchronised-starts). The RS485
+> model is kept for reference.
+
 This hardware revision has no dedicated sync line. For private testing, the
 controller therefore relies on RS485 time distribution.
 

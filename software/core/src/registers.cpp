@@ -11,7 +11,7 @@ struct RegisterName final {
     std::string_view name;
 };
 
-constexpr std::array<RegisterName, 47> k_registers{{
+constexpr std::array<RegisterName, 48> k_registers{{
     {AxisRegister::protocol_version, "PROTOCOL_VERSION"},
     {AxisRegister::device_type, "DEVICE_TYPE"},
     {AxisRegister::axis_id, "AXIS_ID"},
@@ -59,6 +59,7 @@ constexpr std::array<RegisterName, 47> k_registers{{
     {AxisRegister::last_sync_rx_tick_us, "LAST_SYNC_RX_TICK_US"},
     {AxisRegister::sync_watchdog_timeout_ms, "SYNC_WATCHDOG_TIMEOUT_MS"},
     {AxisRegister::sync_status_word, "SYNC_STATUS_WORD"},
+    {AxisRegister::last_start_tick_us, "LAST_START_TICK_US"},
 }};
 
 [[nodiscard]] bool equals_ignore_case(std::string_view lhs, std::string_view rhs) noexcept

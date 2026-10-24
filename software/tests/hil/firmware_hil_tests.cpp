@@ -491,14 +491,44 @@ TEST_F(FirmwareHilRawConsoleTests, ReportsOnlyImplementedCapabilities)
     EXPECT_EQ(capability_word & capability_joint_space, 0u);
 }
 
-TEST_F(FirmwareHilRawConsoleTests, RejectsFutureExecuteAtTick)
+TEST_F(FirmwareHilRawConsoleTests, StartsRelativeMoveAtScheduledTick)
+{
+    static constexpr std::uint32_t status_start_scheduled = 1u << 14;
+
+    const auto start_position = static_cast<std::int32_t>(
+        read_register(roberta::core::AxisRegister::current_position_steps));
+    const auto now = read_register(roberta::core::AxisRegister::local_tick_us);
+    require_command_contains(std::format("reg write EXECUTE_AT_TICK_US {}", now + 400000u), "ok");
+    require_command_contains("reg write STAGED_RELATIVE_MOVE_STEPS 40", "ok");
+    require_command_contains("reg bitset CONTROL_WORD 8", "ok");
+
+    const auto armed = read_register(roberta::core::AxisRegister::status_word);
+    EXPECT_NE(armed & status_start_scheduled, 0u);
+    EXPECT_EQ(armed & status_moving, 0u);
+
+    std::this_thread::sleep_for(1500ms);
+    const auto end_position = static_cast<std::int32_t>(
+        read_register(roberta::core::AxisRegister::current_position_steps));
+    EXPECT_EQ(end_position - start_position, 40);
+    EXPECT_EQ(read_register(roberta::core::AxisRegister::status_word) & status_start_scheduled, 0u);
+    require_command_contains("reg write EXECUTE_AT_TICK_US 0", "ok");
+}
+
+TEST_F(FirmwareHilRawConsoleTests, RejectsScheduledStartsLateOrTooFarAhead)
 {
     const auto now = read_register(roberta::core::AxisRegister::local_tick_us);
-    require_command_contains("reg bitset CONTROL_WORD 128", "ok");
-    require_command_contains(std::format("reg write EXECUTE_AT_TICK_US {}", now + 1000000u), "ok");
     require_command_contains("reg write STAGED_RELATIVE_MOVE_STEPS 10", "ok");
-    require_command_contains("reg bitset CONTROL_WORD 8", "not-supported");
-    EXPECT_NE(read_register(roberta::core::AxisRegister::fault_word), 0u);
+
+    require_command_contains(std::format("reg write EXECUTE_AT_TICK_US {}", now + 10000000u), "ok");
+    require_command_contains("reg bitset CONTROL_WORD 8", "invalid-value");
+    EXPECT_EQ(read_register(roberta::core::AxisRegister::last_error_code), 107u);
+
+    require_command_contains("reg bitset CONTROL_WORD 128", "ok");
+    require_command_contains(std::format("reg write EXECUTE_AT_TICK_US {}", now - 1000u), "ok");
+    require_command_contains("reg bitset CONTROL_WORD 8", "invalid-value");
+    EXPECT_EQ(read_register(roberta::core::AxisRegister::last_error_code), 106u);
+
+    require_command_contains("reg write EXECUTE_AT_TICK_US 0", "ok");
 }
 
 } // namespace

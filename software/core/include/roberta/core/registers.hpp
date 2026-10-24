@@ -61,6 +61,7 @@ enum class AxisRegister : std::uint16_t {
     last_sync_rx_tick_us = 0x0054,
     sync_watchdog_timeout_ms = 0x0055,
     sync_status_word = 0x0056,
+    last_start_tick_us = 0x0057,
 };
 
 enum class ControlWord : std::uint32_t {
@@ -93,6 +94,7 @@ enum class StatusWord : std::uint32_t {
     brake_applied = 1u << 11,
     brake_released = 1u << 12,
     fan_active = 1u << 13,
+    start_scheduled = 1u << 14,
 };
 
 enum class FaultWord : std::uint32_t {

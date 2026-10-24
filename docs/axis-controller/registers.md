@@ -83,6 +83,7 @@ Joint-space angle registers use signed `Q12.20` degrees stored in `i32`.
 | `0x0054` | `LAST_SYNC_RX_TICK_US` | `u32` | `RO` | Local tick when the last sync packet was accepted. |
 | `0x0055` | `SYNC_WATCHDOG_TIMEOUT_MS` | `u32` | `RW` | Timeout for sync-loss shutdown. Default `100`. |
 | `0x0056` | `SYNC_STATUS_WORD` | `u32` | `RO` | Distributed time-sync state bits. |
+| `0x0057` | `LAST_START_TICK_US` | `u32` | `RO` | Local tick at which the most recent move or home actually started. |
 
 ## Identity And Capability
 
@@ -152,6 +153,7 @@ Joint-space angle registers use signed `Q12.20` degrees stored in `i32`.
 | `11` | Brake currently applied |
 | `12` | Brake released for motion |
 | `13` | Fan output active |
+| `14` | Move armed, waiting for `EXECUTE_AT_TICK_US` |
 
 ### `FAULT_WORD` Bits
 
@@ -252,6 +254,7 @@ Joint-space angle registers use signed `Q12.20` degrees stored in `i32`.
 | `LAST_SYNC_RX_TICK_US` | `u32` | `RO` | Local execution tick when the last valid time-sync packet was accepted. |
 | `SYNC_WATCHDOG_TIMEOUT_MS` | `u32` | `RW` | Communications-watchdog timeout used to detect loss of the expected sync/time packet stream. Suggested default `100`. |
 | `SYNC_STATUS_WORD` | `u32` | `RO` | Distributed time-sync state bits. |
+| `LAST_START_TICK_US` | `u32` | `RO` | Local tick at which the most recent move or home actually started. Hosts convert it back to their own clock to measure how closely scheduled starts lined up across axes. |
 
 ### `SYNC_STATUS_WORD` Bits
 

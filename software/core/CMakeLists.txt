@@ -1,6 +1,7 @@
 add_library(roberta_core STATIC
     src/error.cpp
     src/axis/axis.cpp
+    src/axis/clock_sync.cpp
     src/axis/controller_axis_device.cpp
     src/axis/console_axis_device.cpp
     src/execution/execution_engine.cpp

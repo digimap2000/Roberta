@@ -3,6 +3,8 @@
 #include "axis_hw.h"
 #include "axis_service.h"
 
+#include "pico/time.h"
+
 #include <ctype.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -56,6 +58,7 @@ enum {
     REG_LAST_SYNC_RX_TICK_US = 0x0054,
     REG_SYNC_WATCHDOG_TIMEOUT_MS = 0x0055,
     REG_SYNC_STATUS_WORD = 0x0056,
+    REG_LAST_START_TICK_US = 0x0057,
 };
 
 enum {
@@ -100,6 +103,7 @@ enum {
     STATUS_BRAKE_APPLIED = 1u << 11,
     STATUS_BRAKE_RELEASED = 1u << 12,
     STATUS_FAN_ACTIVE = 1u << 13,
+    STATUS_START_SCHEDULED = 1u << 14,
 };
 
 enum {
@@ -140,6 +144,11 @@ enum {
     ERROR_SERVICE_BUSY = 103,
     ERROR_SOFT_LIMIT = 104,
     ERROR_LIMIT_ACTIVE = 105,
+    ERROR_SCHEDULE_LATE = 106,
+    ERROR_SCHEDULE_TOO_FAR = 107,
+    // Scheduled starts further ahead than this are refused, which also
+    // catches ticks computed from a stale or wrapped clock estimate.
+    SCHEDULE_MAX_LEAD_US = 5000000,
 };
 
 typedef struct {
@@ -179,6 +188,12 @@ typedef struct {
     uint32_t sync_status_word;
     uint64_t boot_time_us;
     uint64_t local_tick_us;
+    bool scheduled_armed;
+    uint32_t scheduled_action_bits;
+    uint32_t scheduled_at_tick_us;
+    int32_t scheduled_target_position_steps;
+    int32_t scheduled_relative_move_steps;
+    uint32_t last_start_tick_us;
 } AxisRegisterState;
 
 static AxisRegisterState g_registers;
@@ -231,6 +246,7 @@ static const AxisRegisterInfo k_register_info[] = {
     {REG_LAST_SYNC_RX_TICK_US, "LAST_SYNC_RX_TICK_US", AXIS_REGISTER_ACCESS_RO},
     {REG_SYNC_WATCHDOG_TIMEOUT_MS, "SYNC_WATCHDOG_TIMEOUT_MS", AXIS_REGISTER_ACCESS_RW},
     {REG_SYNC_STATUS_WORD, "SYNC_STATUS_WORD", AXIS_REGISTER_ACCESS_RO},
+    {REG_LAST_START_TICK_US, "LAST_START_TICK_US", AXIS_REGISTER_ACCESS_RO},
 };
 
 static bool names_equal_ignore_case(const char *lhs, const char *rhs)
@@ -409,6 +425,9 @@ static uint32_t build_status_word(const AxisStatus *status, AxisOutputState outp
     if (outputs.brake_active) {
         word |= STATUS_BRAKE_APPLIED;
     }
+    if (g_registers.scheduled_armed) {
+        word |= STATUS_START_SCHEDULED;
+    }
     if (outputs.fan_active) {
         word |= STATUS_FAN_ACTIVE;
     }
@@ -511,9 +530,39 @@ static AxisRegisterResult apply_motion_parameters(void)
     });
 }
 
-static bool execute_at_tick_is_supported(void)
+static uint32_t local_tick_now(void)
 {
-    return g_registers.execute_at_tick_us == 0;
+    return (uint32_t)time_us_64();
+}
+
+// A move with a non-zero EXECUTE_AT_TICK_US is armed and started by
+// axis_registers_tick when the local tick reaches it.
+static AxisRegisterResult validate_schedule(uint32_t action_bits)
+{
+    const uint32_t motion_actions = action_bits & (CONTROL_MOVE_ABSOLUTE | CONTROL_MOVE_RELATIVE | CONTROL_HOME);
+    int32_t lead_us;
+
+    if (motion_actions == 0 || g_registers.execute_at_tick_us == 0) {
+        return AXIS_REGISTER_RESULT_OK;
+    }
+
+    lead_us = (int32_t)(g_registers.execute_at_tick_us - local_tick_now());
+    if (lead_us <= 0) {
+        set_fault(FAULT_INVALID_COMMAND, ERROR_SCHEDULE_LATE);
+        return AXIS_REGISTER_RESULT_INVALID_VALUE;
+    }
+    if (lead_us > SCHEDULE_MAX_LEAD_US) {
+        set_fault(FAULT_INVALID_COMMAND, ERROR_SCHEDULE_TOO_FAR);
+        return AXIS_REGISTER_RESULT_INVALID_VALUE;
+    }
+
+    return AXIS_REGISTER_RESULT_OK;
+}
+
+static void cancel_scheduled_start(void)
+{
+    g_registers.scheduled_armed = false;
+    g_registers.scheduled_action_bits = 0;
 }
 
 static AxisRegisterResult validate_motion_request(
@@ -575,15 +624,6 @@ static AxisRegisterResult validate_control_word_request(
 {
     AxisRegisterResult result;
 
-    if ((action_bits & (CONTROL_MOVE_ABSOLUTE |
-                        CONTROL_MOVE_RELATIVE |
-                        CONTROL_HOME |
-                        CONTROL_MOVE_JOINT)) != 0 &&
-        !execute_at_tick_is_supported()) {
-        set_fault(FAULT_INVALID_COMMAND, ERROR_UNSUPPORTED);
-        return AXIS_REGISTER_RESULT_NOT_SUPPORTED;
-    }
-
     if ((action_bits & CONTROL_MOVE_JOINT) != 0 ||
         (action_bits & CONTROL_SAVE_CONFIG) != 0 ||
         (action_bits & CONTROL_RELOAD_CONFIG) != 0) {
@@ -596,7 +636,7 @@ static AxisRegisterResult validate_control_word_request(
         return result;
     }
 
-    return AXIS_REGISTER_RESULT_OK;
+    return validate_schedule(action_bits);
 }
 
 static void snapshot_active_step_command(const AxisStatus *status)
@@ -609,12 +649,39 @@ static void snapshot_active_step_command(const AxisStatus *status)
     g_registers.mode_word = current_mode_word(status);
 }
 
+static AxisRegisterResult start_motion(uint32_t motion_bits, int32_t target_position_steps, int32_t relative_move_steps)
+{
+    AxisStatus status;
+    AxisRegisterResult result;
+    AxisCommand command;
+
+    if (motion_bits & CONTROL_HOME) {
+        command = (AxisCommand){.type = AXIS_COMMAND_HOME};
+    } else if (motion_bits & CONTROL_MOVE_ABSOLUTE) {
+        command = (AxisCommand){.type = AXIS_COMMAND_MOVE_TO, .steps = target_position_steps};
+    } else {
+        command = (AxisCommand){.type = AXIS_COMMAND_MOVE_BY, .steps = relative_move_steps};
+    }
+
+    result = submit_command(&command);
+    if (result != AXIS_REGISTER_RESULT_OK) {
+        return result;
+    }
+
+    g_registers.last_start_tick_us = local_tick_now();
+    axis_service_get_status(&status);
+    snapshot_active_step_command(&status);
+    g_registers.mode_word = (motion_bits & CONTROL_HOME) ? MODE_HOMING : MODE_STEP_POSITION;
+    return AXIS_REGISTER_RESULT_OK;
+}
+
 static AxisRegisterResult write_control_word(uint32_t value)
 {
     AxisStatus status;
     AxisRegisterResult result = AXIS_REGISTER_RESULT_OK;
     uint32_t requested_levels = value & CONTROL_LEVEL_MASK;
     uint32_t action_bits = value & CONTROL_ACTION_MASK;
+    uint32_t motion_bits;
 
     axis_service_get_status(&status);
 
@@ -646,6 +713,9 @@ static AxisRegisterResult write_control_word(uint32_t value)
     }
 
     g_registers.control_word_levels = requested_levels;
+    if ((requested_levels & CONTROL_LEVEL_MASK) != CONTROL_LEVEL_MASK) {
+        cancel_scheduled_start();
+    }
 
     if (action_bits == 0) {
         return AXIS_REGISTER_RESULT_OK;
@@ -660,6 +730,10 @@ static AxisRegisterResult write_control_word(uint32_t value)
         if (result != AXIS_REGISTER_RESULT_OK) {
             return result;
         }
+    }
+
+    if (action_bits & (CONTROL_STOP | CONTROL_ESTOP)) {
+        cancel_scheduled_start();
     }
 
     if (action_bits & CONTROL_STOP) {
@@ -687,43 +761,26 @@ static AxisRegisterResult write_control_word(uint32_t value)
         g_registers.mode_word = MODE_IDLE;
     }
 
-    if (action_bits & CONTROL_HOME) {
-        result = submit_command(&(AxisCommand){.type = AXIS_COMMAND_HOME});
-        if (result != AXIS_REGISTER_RESULT_OK) {
-            return result;
-        }
-        axis_service_get_status(&status);
-        snapshot_active_step_command(&status);
-        g_registers.mode_word = MODE_HOMING;
+    motion_bits = action_bits & (CONTROL_MOVE_ABSOLUTE | CONTROL_MOVE_RELATIVE | CONTROL_HOME);
+    if (motion_bits == 0) {
+        return AXIS_REGISTER_RESULT_OK;
     }
 
-    if (action_bits & CONTROL_MOVE_ABSOLUTE) {
-        result = submit_command(&(AxisCommand){
-            .type = AXIS_COMMAND_MOVE_TO,
-            .steps = g_registers.staged_target_position_steps,
-        });
-        if (result != AXIS_REGISTER_RESULT_OK) {
-            return result;
-        }
-        axis_service_get_status(&status);
-        snapshot_active_step_command(&status);
-        g_registers.mode_word = MODE_STEP_POSITION;
+    // A newer motion command replaces any start still waiting.
+    cancel_scheduled_start();
+
+    if (g_registers.execute_at_tick_us != 0) {
+        g_registers.scheduled_armed = true;
+        g_registers.scheduled_action_bits = motion_bits;
+        g_registers.scheduled_at_tick_us = g_registers.execute_at_tick_us;
+        g_registers.scheduled_target_position_steps = g_registers.staged_target_position_steps;
+        g_registers.scheduled_relative_move_steps = g_registers.staged_relative_move_steps;
+        return AXIS_REGISTER_RESULT_OK;
     }
 
-    if (action_bits & CONTROL_MOVE_RELATIVE) {
-        result = submit_command(&(AxisCommand){
-            .type = AXIS_COMMAND_MOVE_BY,
-            .steps = g_registers.staged_relative_move_steps,
-        });
-        if (result != AXIS_REGISTER_RESULT_OK) {
-            return result;
-        }
-        axis_service_get_status(&status);
-        snapshot_active_step_command(&status);
-        g_registers.mode_word = MODE_STEP_POSITION;
-    }
-
-    return AXIS_REGISTER_RESULT_OK;
+    return start_motion(motion_bits,
+                        g_registers.staged_target_position_steps,
+                        g_registers.staged_relative_move_steps);
 }
 
 void axis_registers_init(uint64_t now_us)
@@ -755,6 +812,15 @@ void axis_registers_tick(uint64_t now_us)
     AxisStatus status;
 
     g_registers.local_tick_us = now_us;
+
+    if (g_registers.scheduled_armed &&
+        (int32_t)((uint32_t)now_us - g_registers.scheduled_at_tick_us) >= 0) {
+        const uint32_t motion_bits = g_registers.scheduled_action_bits;
+        cancel_scheduled_start();
+        (void)start_motion(motion_bits,
+                           g_registers.scheduled_target_position_steps,
+                           g_registers.scheduled_relative_move_steps);
+    }
 
     axis_service_get_status(&status);
     if (status.homing) {
@@ -914,8 +980,12 @@ AxisRegisterResult axis_registers_read(uint16_t address, uint32_t *value)
     case REG_UPTIME_MS:
         *value = (uint32_t)((g_registers.local_tick_us - g_registers.boot_time_us) / 1000u);
         return AXIS_REGISTER_RESULT_OK;
+    case REG_LAST_START_TICK_US:
+        *value = g_registers.last_start_tick_us;
+        return AXIS_REGISTER_RESULT_OK;
     case REG_LOCAL_TICK_US:
-        *value = (uint32_t)g_registers.local_tick_us;
+        // Read the timer directly: hosts estimate clock offsets from it.
+        *value = local_tick_now();
         return AXIS_REGISTER_RESULT_OK;
     case REG_LAST_ERROR_CODE:
         *value = g_registers.last_error_code;
