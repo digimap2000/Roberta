@@ -23,13 +23,13 @@ struct AxisDetailView: View {
             .padding(20)
             .frame(maxWidth: 820, alignment: .leading)
         }
-        .navigationTitle(axis.name)
+        .navigationTitle(axis.displayName)
     }
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(axis.name)
+                Text(axis.displayName)
                     .font(.title2.weight(.semibold))
                 Text(axis.endpoint)
                     .font(.callout.monospaced())
@@ -52,14 +52,15 @@ struct AxisDetailView: View {
                 }
             }
             Spacer()
-            switch axis.state {
-            case .connected:
-                Button("Disconnect") { axis.disconnect() }
-            case .connecting:
-                ProgressView().controlSize(.small)
-            case .disconnected, .failed:
-                Button("Connect") { axis.connect() }
-                    .keyboardShortcut(.defaultAction)
+            if axis.isPaused {
+                Button("Resume") { axis.resume() }
+                    .help("Reconnect and keep this axis connected")
+            } else {
+                if !axis.isConnected {
+                    ProgressView().controlSize(.small)
+                }
+                Button("Pause") { axis.pause() }
+                    .help("Disconnect and stop reconnecting, e.g. to use the board's USB console")
             }
         }
     }

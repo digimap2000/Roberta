@@ -108,6 +108,11 @@ def i32(value):
 
 class Axis:
     def __init__(self):
+        self.reset_state("power-on")
+
+    def reset_state(self, reset_reason):
+        """Fresh boot: drive off, position zero, like a real board after a reset."""
+        self.reset_reason = reset_reason
         self.started = time.monotonic()
         # Each simulated board's tick starts somewhere random, like real boards.
         self.tick_offset = random.randrange(1 << 32)
@@ -287,6 +292,7 @@ class Console:
     def __init__(self, axis, args):
         self.axis = axis
         self.args = args
+        self.crash = None
 
     def register_line(self, address):
         name, _ = BY_ADDRESS[address]
@@ -311,6 +317,12 @@ class Console:
 
         if command == "ping":
             return ["pong"]
+        if command == "diag":
+            if rest and rest[0] in ("panic", "hang"):
+                self.crash = "panic phase=net caller=0x10012345 msg=\"simulated\"" if rest[0] == "panic" else "watchdog phase=net"
+                return ["crashing"]
+            uptime = int((time.monotonic() - axis.started) * 1000)
+            return [f"diag reset={axis.reset_reason} uptime_ms={uptime}"]
         if command == "help":
             return ["commands: help status ping net reg read|readm|write|bitset|bitclear|dump",
                     "aliases: enable on|off outputs on|off zero home goto <steps> move <steps> stop"]
@@ -390,6 +402,9 @@ async def serve(args):
                 active["last_rx"] = None
 
     async def client(reader, writer):
+        if time.monotonic() < active.get("down_until", 0):
+            writer.close()
+            return
         if active["writer"] is not None:
             active["writer"].close()
         active["writer"], active["last_rx"] = writer, None
@@ -403,6 +418,15 @@ async def serve(args):
                 response = console.handle(text)
                 writer.write(("".join(f"{r}\r\n" for r in response) + PROMPT).encode())
                 await writer.drain()
+                if console.crash:
+                    # Simulated reset: drop the link, stay away for a while,
+                    # then come back as a freshly booted board.
+                    print(f"simulating reset: {console.crash}")
+                    axis.cancel_scheduled()
+                    axis.reset_state(console.crash)
+                    console.crash = None
+                    active["down_until"] = time.monotonic() + 3
+                    break
         except ConnectionError:
             pass
         finally:

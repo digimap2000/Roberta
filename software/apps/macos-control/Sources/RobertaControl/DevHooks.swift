@@ -2,9 +2,10 @@ import AppKit
 
 /// Environment switches for bench and development use:
 ///
-/// - `ROBERTA_CONTROL_AUTOCONNECT=1` connects to every advertised axis.
 /// - `ROBERTA_CONTROL_AXES=tcp://a,tcp://b` adds and connects these axes at
-///   launch, leaving advertised boards alone (unless AUTOCONNECT is also set).
+///   launch.
+/// - `ROBERTA_CONTROL_NO_DISCOVERY=1` skips Bonjour, so tests with fake axes
+///   leave the real boards alone.
 /// - `ROBERTA_CONTROL_MOVE_TOGETHER=<steps>` enables every connected axis and
 ///   runs one coordinated move a few seconds after launch, tracing the result.
 /// - `ROBERTA_CONTROL_TRACE=1` prints connection state changes and errors.
@@ -14,7 +15,7 @@ import AppKit
 enum DevHooks {
     static let environment = ProcessInfo.processInfo.environment
 
-    static var autoConnect: Bool { environment["ROBERTA_CONTROL_AUTOCONNECT"] == "1" }
+    static var discoveryDisabled: Bool { environment["ROBERTA_CONTROL_NO_DISCOVERY"] == "1" }
 
     static func trace(_ message: @autoclosure () -> String) {
         if environment["ROBERTA_CONTROL_TRACE"] == "1" {
@@ -26,7 +27,6 @@ enum DevHooks {
         guard let list = environment["ROBERTA_CONTROL_AXES"] else { return }
         for endpoint in list.split(separator: ",") {
             workspace.addAxis(String(endpoint))
-            workspace.selectedAxis?.connect()
         }
     }
 

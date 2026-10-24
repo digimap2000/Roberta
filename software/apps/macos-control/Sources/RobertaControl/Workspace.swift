@@ -2,15 +2,18 @@ import Foundation
 import Network
 import Observation
 
-/// All known axis controllers: those advertised over Bonjour as
-/// `_roberta-axis._tcp` plus any added by hand.
+/// The robot's axis controllers: every board advertising `_roberta-axis._tcp`
+/// is connected automatically (this app serves one robot), plus any added
+/// by hand.
 @MainActor
 @Observable
 final class Workspace {
     static let serviceType = "_roberta-axis._tcp"
     static let defaultPort = 7300
+    static let jointCount = 6
 
     private(set) var axes: [AxisModel] = []
+    let events = EventLog()
     var selection: AxisModel.ID?
     var isShowingMoveTogether = false
     private(set) var browserState = "Starting discovery"
@@ -21,12 +24,21 @@ final class Workspace {
         axes.filter(\.isConnected).count >= 2
     }
 
+    func axis(forJoint joint: Int) -> AxisModel? {
+        axes.first { $0.joint == joint }
+    }
+
+    /// Axes that are not one of the robot's numbered joints.
+    var otherAxes: [AxisModel] {
+        axes.filter { axis in axis.joint.map { !(1...Self.jointCount).contains($0) } ?? true }
+    }
+
     var selectedAxis: AxisModel? {
         axes.first { $0.id == selection }
     }
 
     func startDiscovery() {
-        guard browser == nil else { return }
+        guard browser == nil, !DevHooks.discoveryDisabled else { return }
 
         let browser = NWBrowser(for: .bonjour(type: Self.serviceType, domain: nil), using: NWParameters())
         browser.stateUpdateHandler = { [weak self] state in
@@ -52,6 +64,7 @@ final class Workspace {
 
         let endpoint = trimmed.hasPrefix("tcp://") || trimmed.hasPrefix("/dev/") ? trimmed : "tcp://\(trimmed)"
         let axis = axis(for: endpoint, name: trimmed)
+        axis.connect()
         selection = axis.id
     }
 
@@ -143,7 +156,7 @@ final class Workspace {
         if let existing = axes.first(where: { $0.endpoint == endpoint }) {
             return existing
         }
-        let axis = AxisModel(name: name, endpoint: endpoint)
+        let axis = AxisModel(name: name, endpoint: endpoint, events: events)
         axes.append(axis)
         axes.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         return axis
@@ -154,9 +167,7 @@ final class Workspace {
         for name in names {
             let axis = axis(for: "tcp://\(name).local:\(Self.defaultPort)", name: name)
             axis.isAdvertised = true
-            if DevHooks.autoConnect, axis.state == .disconnected {
-                axis.connect()
-            }
+            axis.connect()
         }
         for axis in axes where axis.isAdvertised && !names.contains(axis.name) {
             axis.isAdvertised = false
