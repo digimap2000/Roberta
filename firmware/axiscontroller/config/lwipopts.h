@@ -12,7 +12,13 @@
 #define MEMP_NUM_TCP_SEG 32
 #define MEMP_NUM_ARP_QUEUE 10
 #define MEMP_NUM_TCP_PCB 4
-#define MEMP_NUM_SYS_TIMEOUT (LWIP_NUM_SYS_TIMEOUT_INTERNAL + 3)
+// lwIP panics when this pool runs dry. The mDNS responder is the hungry
+// user: one timer per parked truncated query (macOS sends these routinely),
+// plus up to about eight of its own for probing, announcing and multicast
+// pacing. The "+3" from the Pico examples was exhausted by ordinary Bonjour
+// traffic. Slots are ~20 bytes each, so be generous.
+#define MDNS_MAX_STORED_PKTS 4
+#define MEMP_NUM_SYS_TIMEOUT (LWIP_NUM_SYS_TIMEOUT_INTERNAL + MDNS_MAX_STORED_PKTS + 12)
 #define PBUF_POOL_SIZE 24
 
 #define LWIP_ARP 1
