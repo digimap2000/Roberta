@@ -17,6 +17,8 @@ struct RobertaControlApp: App {
                 .onAppear {
                     workspace.startDiscovery()
                     NSApplication.shared.activate()
+                    DevHooks.addRequestedAxes(to: workspace)
+                    DevHooks.scheduleMoveTogetherIfRequested(workspace)
                     DevHooks.scheduleCaptureIfRequested()
                 }
         }

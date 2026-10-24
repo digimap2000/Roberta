@@ -14,6 +14,7 @@ Run several with different names and ports to try multi-axis work.
 
 import argparse
 import asyncio
+import random
 import shutil
 import subprocess
 import time
@@ -69,6 +70,7 @@ REGISTERS = [
     (0x0054, "LAST_SYNC_RX_TICK_US", False),
     (0x0055, "SYNC_WATCHDOG_TIMEOUT_MS", True),
     (0x0056, "SYNC_STATUS_WORD", False),
+    (0x0057, "LAST_START_TICK_US", False),
 ]
 BY_NAME = {name: (address, writable) for address, name, writable in REGISTERS}
 BY_ADDRESS = {address: (name, writable) for address, name, writable in REGISTERS}
@@ -86,6 +88,11 @@ CONTROL_SET_ZERO = 1 << 8
 FAULT_MOTION_WHILE_DISABLED = 1 << 1
 FAULT_MOVE_BEFORE_HOMED = 1 << 2
 
+FAULT_INVALID_COMMAND = 1 << 0
+
+STATUS_START_SCHEDULED = 1 << 14
+SCHEDULE_MAX_LEAD_US = 5_000_000
+
 WATCHDOG_S = 1.0
 HOME_SWITCH_STEPS = -400  # where the simulated home switch sits
 
@@ -102,6 +109,10 @@ def i32(value):
 class Axis:
     def __init__(self):
         self.started = time.monotonic()
+        # Each simulated board's tick starts somewhere random, like real boards.
+        self.tick_offset = random.randrange(1 << 32)
+        self.scheduled = None  # (handle, bits, target, relative)
+        self.last_start_tick = 0
         self.stored = {address: 0 for address, _, _ in REGISTERS}
         self.stored.update({
             0x0000: 1,
@@ -131,6 +142,9 @@ class Axis:
     def enabled(self):
         return self.levels & CONTROL_OUTPUT_ENABLE and self.levels & CONTROL_MOTOR_ENABLE
 
+    def local_tick(self):
+        return (int(time.monotonic() * 1e6) + self.tick_offset) & 0xFFFFFFFF
+
     def status_word(self):
         word = self.levels & 0x3
         word |= (1 << 2) if self.moving else 0
@@ -139,6 +153,7 @@ class Axis:
         word |= (1 << 5) if round(self.position) == self.target and not self.moving else 0
         word |= (1 << 6) if self.fault else 0
         word |= (1 << 7) if self.position <= HOME_SWITCH_STEPS else 0
+        word |= STATUS_START_SCHEDULED if self.scheduled else 0
         return word
 
     def read(self, address):
@@ -151,8 +166,9 @@ class Axis:
             0x0025: abs(round(self.velocity)),
             0x0050: self.steps,
             0x0051: int((time.monotonic() - self.started) * 1000),
-            0x0052: int((time.monotonic() - self.started) * 1e6),
+            0x0052: self.local_tick(),
             0x0053: self.last_error,
+            0x0057: self.last_start_tick,
         }
         return u32(live.get(address, self.stored[address]))
 
@@ -161,6 +177,7 @@ class Axis:
             self.levels = value & 0x3
             if not self.enabled:
                 self.stop()
+                self.cancel_scheduled()
             self.action(value & ~0x3)
         else:
             self.stored[address] = u32(value)
@@ -175,24 +192,58 @@ class Axis:
             self.last_error = 0
         if bits & (CONTROL_STOP | CONTROL_ESTOP):
             self.stop()
+            self.cancel_scheduled()
             if bits & CONTROL_ESTOP:
                 self.levels &= ~CONTROL_MOTOR_ENABLE
         if bits & CONTROL_SET_ZERO:
             self.position, self.target, self.homed = 0.0, 0, True
             self.stop()
-        if bits & (CONTROL_MOVE_ABSOLUTE | CONTROL_MOVE_RELATIVE | CONTROL_HOME) and not self.enabled:
+        motion = bits & (CONTROL_MOVE_ABSOLUTE | CONTROL_MOVE_RELATIVE | CONTROL_HOME)
+        if not motion:
+            return
+        if not self.enabled:
             self.raise_fault(FAULT_MOTION_WHILE_DISABLED, 101)
             return
-        if bits & CONTROL_MOVE_ABSOLUTE:
-            if not self.homed:
-                self.raise_fault(FAULT_MOVE_BEFORE_HOMED, 102)
-                return
-            self.target = i32(self.stored[0x0020])
+        if motion & CONTROL_MOVE_ABSOLUTE and not self.homed:
+            self.raise_fault(FAULT_MOVE_BEFORE_HOMED, 102)
+            return
+
+        self.cancel_scheduled()
+        target, relative = i32(self.stored[0x0020]), i32(self.stored[0x002B])
+        execute_at = self.stored[0x0018]
+        if execute_at == 0:
+            self.start_motion(motion, target, relative)
+            return
+
+        lead_us = i32(execute_at - self.local_tick())
+        if lead_us <= 0:
+            self.raise_fault(FAULT_INVALID_COMMAND, 106)
+        elif lead_us > SCHEDULE_MAX_LEAD_US:
+            self.raise_fault(FAULT_INVALID_COMMAND, 107)
+        else:
+            handle = asyncio.get_running_loop().call_later(lead_us / 1e6, self.fire_scheduled)
+            self.scheduled = (handle, motion, target, relative)
+
+    def fire_scheduled(self):
+        _, motion, target, relative = self.scheduled
+        self.scheduled = None
+        if self.enabled:
+            self.start_motion(motion, target, relative)
+
+    def cancel_scheduled(self):
+        if self.scheduled:
+            self.scheduled[0].cancel()
+            self.scheduled = None
+
+    def start_motion(self, motion, target, relative):
+        self.last_start_tick = self.local_tick()
+        if motion & CONTROL_MOVE_ABSOLUTE:
+            self.target = target
             self.moving = True
-        if bits & CONTROL_MOVE_RELATIVE:
-            self.target = round(self.position) + i32(self.stored[0x002B])
+        elif motion & CONTROL_MOVE_RELATIVE:
+            self.target = round(self.position) + relative
             self.moving = True
-        if bits & CONTROL_HOME:
+        else:
             self.homing, self.homed, self.moving = True, False, False
 
     def stop(self):

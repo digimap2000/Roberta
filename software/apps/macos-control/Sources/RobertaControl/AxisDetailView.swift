@@ -94,13 +94,18 @@ private struct StatusPanel: View {
                         ("Home switch", snapshot.homeSwitch, .orange),
                         ("Limit A", snapshot.limitA, .orange),
                         ("Limit B", snapshot.limitB, .orange),
+                        ("Armed", snapshot.startScheduled, .purple),
                     ])
 
-                    if snapshot.faultWord != 0 {
-                        Label(String(format: "Fault word 0x%08X, last error %u",
-                                     snapshot.faultWord, snapshot.lastErrorCode),
-                              systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
+                    if let fault = axis.faultDescription {
+                        HStack {
+                            Label(fault, systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                                .help(String(format: "Fault word 0x%08X, last error %u",
+                                             snapshot.faultWord, snapshot.lastErrorCode))
+                            Button("Clear") { axis.clearFaults() }
+                                .controlSize(.small)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -128,7 +133,10 @@ private struct DrivePanel: View {
                     Button("Enable drive") { axis.enableDrive() }
                 }
                 Button("Home") { axis.home() }
-                    .help("Seek the home switch in the negative direction")
+                    .disabled(!axis.isDriveEnabled)
+                    .help(axis.isDriveEnabled
+                          ? "Seek the home switch in the negative direction"
+                          : "Enable the drive to home")
                 Button("Set zero here") { axis.setZero() }
                     .help("Call the current position zero and mark the axis homed")
                 Button("Clear faults") { axis.clearFaults() }
@@ -150,7 +158,6 @@ private struct JogPanel: View {
 
     @State private var stepSize: Int32 = 100
     @State private var target = ""
-    @State private var holding = false
 
     private let stepSizes: [Int32] = [1, 10, 100, 1_000, 10_000]
     /// Far enough that a held jog runs until release; the controller's link
@@ -186,7 +193,14 @@ private struct JogPanel: View {
                         .disabled(Int32(target) == nil || axis.snapshot?.homed != true)
                         .help("Absolute moves need the axis homed or zeroed")
                 }
+
+                if !axis.isDriveEnabled {
+                    Text("Enable the drive to jog.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
+            .disabled(!axis.isDriveEnabled)
             .padding(6)
         }
     }
@@ -335,6 +349,7 @@ private struct HoldButton: View {
     let systemImage: String
     let onChange: (Bool) -> Void
 
+    @Environment(\.isEnabled) private var isEnabled
     @State private var pressed = false
 
     var body: some View {
@@ -347,16 +362,18 @@ private struct HoldButton: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { _ in
-                        if !pressed {
+                        if isEnabled, !pressed {
                             pressed = true
                             onChange(true)
                         }
                     }
                     .onEnded { _ in
+                        guard pressed else { return }
                         pressed = false
                         onChange(false)
                     }
             )
+            .opacity(isEnabled ? 1 : 0.4)
             .help("Moves while held; stops on release")
     }
 }

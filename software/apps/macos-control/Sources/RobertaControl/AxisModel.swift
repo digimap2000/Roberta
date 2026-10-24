@@ -48,6 +48,15 @@ final class AxisModel: Identifiable {
     }
 
     var isConnected: Bool { state == .connected }
+    var isDriveEnabled: Bool { snapshot?.motorEnabled == true }
+
+    var faultDescription: String? {
+        guard let snapshot, snapshot.faultWord != 0 else { return nil }
+        return AxisFaults.describe(faultWord: snapshot.faultWord, lastErrorCode: snapshot.lastErrorCode)
+    }
+
+    /// The live connection, for operations that span several axes.
+    var coordinationLink: AxisLink? { link }
 
     func connect() {
         guard state != .connecting, state != .connected else { return }

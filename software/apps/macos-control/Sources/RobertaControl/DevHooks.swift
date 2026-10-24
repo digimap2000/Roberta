@@ -3,6 +3,10 @@ import AppKit
 /// Environment switches for bench and development use:
 ///
 /// - `ROBERTA_CONTROL_AUTOCONNECT=1` connects to every advertised axis.
+/// - `ROBERTA_CONTROL_AXES=tcp://a,tcp://b` adds and connects these axes at
+///   launch, leaving advertised boards alone (unless AUTOCONNECT is also set).
+/// - `ROBERTA_CONTROL_MOVE_TOGETHER=<steps>` enables every connected axis and
+///   runs one coordinated move a few seconds after launch, tracing the result.
 /// - `ROBERTA_CONTROL_TRACE=1` prints connection state changes and errors.
 /// - `ROBERTA_CONTROL_CAPTURE=/path/shot.png` renders the main window to a PNG
 ///   a few seconds after launch (no screen-recording permission needed).
@@ -15,6 +19,30 @@ enum DevHooks {
     static func trace(_ message: @autoclosure () -> String) {
         if environment["ROBERTA_CONTROL_TRACE"] == "1" {
             FileHandle.standardError.write(Data("[trace] \(message())\n".utf8))
+        }
+    }
+
+    static func addRequestedAxes(to workspace: Workspace) {
+        guard let list = environment["ROBERTA_CONTROL_AXES"] else { return }
+        for endpoint in list.split(separator: ",") {
+            workspace.addAxis(String(endpoint))
+            workspace.selectedAxis?.connect()
+        }
+    }
+
+    static func scheduleMoveTogetherIfRequested(_ workspace: Workspace) {
+        guard let steps = Int32(environment["ROBERTA_CONTROL_MOVE_TOGETHER"] ?? "") else { return }
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            let axes = workspace.axes.filter(\.isConnected)
+            axes.forEach { $0.enableDrive() }
+            try? await Task.sleep(for: .seconds(1))
+            let results = await workspace.moveTogether(axes.map { ($0, steps) }, lead: .milliseconds(300))
+            for result in results {
+                trace("move together \(result.name): start \(result.startOffsetMs.map { String(format: "%+.3f ms", $0) } ?? "-")"
+                      + " rtt \(result.roundTripUs.map(String.init) ?? "-") us \(result.error ?? "")")
+            }
         }
     }
 

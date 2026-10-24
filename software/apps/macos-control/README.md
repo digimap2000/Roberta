@@ -50,6 +50,12 @@ distributable app.
 - **Motion profile**: velocity, acceleration and home velocity in steps.
 - **Console**: any firmware console command, such as `net status`,
   `reg dump` or `help`.
+- **Move Together** (toolbar, two or more connected axes): one relative move
+  per axis, scheduled to start at the same instant a few hundred ms ahead. It
+  reports how far each axis's actual start was from the target, and the spread
+  between axes.
+- Faults are shown in words with a **Clear** button. Jog and Home stay greyed
+  out until the drive is enabled.
 - **⌘.**, or **Stop All** in the toolbar, stops every connected axis.
 
 ## Without Hardware
@@ -62,11 +68,17 @@ python3 software/tools/dev/fake_axis.py --name sim-j1
 python3 software/tools/dev/fake_axis.py --name sim-j2 --port 7301
 ```
 
+Each simulated axis starts its clock at a random offset, as real boards do,
+so Move Together exercises the clock sync. Add `--no-bonjour` to keep test
+axes out of other running copies of the app.
+
 ## Development Switches
 
 | Variable | Effect |
 | --- | --- |
 | `ROBERTA_CONTROL_AUTOCONNECT=1` | Connect to every advertised axis |
+| `ROBERTA_CONTROL_AXES=tcp://a,tcp://b` | Add and connect these axes at launch, leaving advertised boards alone |
+| `ROBERTA_CONTROL_MOVE_TOGETHER=<steps>` | Enable every connected axis and run one coordinated move after launch; results go to the trace |
 | `ROBERTA_CONTROL_TRACE=1` | Print connection state changes and errors to stderr |
 | `ROBERTA_CONTROL_CAPTURE=/path.png` | Render the window to a PNG after `ROBERTA_CONTROL_CAPTURE_DELAY` seconds (default 4) |
 | `ROBERTA_FFI_LIB_DIR` | Build-time override for where to find `libroberta_desktop_ffi` |

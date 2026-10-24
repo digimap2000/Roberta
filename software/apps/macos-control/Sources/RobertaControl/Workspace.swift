@@ -50,6 +50,84 @@ final class Workspace {
         selection = axis.id
     }
 
+    /// Starts relative moves on several axes at the same instant: syncs every
+    /// axis clock, schedules each move for one host time `lead` ahead, then
+    /// reads back when each axis actually started.
+    func moveTogether(_ moves: [(axis: AxisModel, steps: Int32)], lead: Duration) async -> [CoordinatedResult] {
+        let jobs = moves.compactMap { move in
+            move.axis.coordinationLink.map {
+                CoordinationJob(id: move.axis.id, name: move.axis.name, steps: move.steps, link: $0)
+            }
+        }
+        var results = Dictionary(uniqueKeysWithValues: jobs.map {
+            ($0.id, CoordinatedResult(id: $0.id, name: $0.name, steps: $0.steps))
+        })
+
+        let syncs = await forEachJob(jobs) { job in try await job.link.syncClock() }
+        for (id, outcome) in syncs {
+            switch outcome {
+            case let .success(roundTrip): results[id]?.roundTripUs = roundTrip
+            case let .failure(error): results[id]?.error = "Clock sync: \(error.localizedDescription)"
+            }
+        }
+        guard results.values.allSatisfy({ $0.error == nil }) else {
+            return ordered(results, jobs)
+        }
+
+        let leadMicroseconds = Int64(lead.components.seconds) * 1_000_000 + lead.components.attoseconds / 1_000_000_000_000
+        let target = AxisLink.hostClockMicroseconds() + leadMicroseconds
+        let schedules = await forEachJob(jobs) { job in try await job.link.moveBy(steps: job.steps, atHostTime: target) }
+        if schedules.contains(where: { (try? $0.1.get()) == nil }) {
+            // All or nothing: cancel whatever did get armed.
+            _ = await forEachJob(jobs) { job in try await job.link.stop() }
+            for (id, outcome) in schedules {
+                if case let .failure(error) = outcome {
+                    results[id]?.error = "Schedule: \(error.localizedDescription)"
+                }
+            }
+            return ordered(results, jobs)
+        }
+
+        try? await Task.sleep(for: lead + .milliseconds(150))
+        let starts = await forEachJob(jobs) { job in try await job.link.lastStartHostTime() }
+        for (id, outcome) in starts {
+            switch outcome {
+            case let .success(started): results[id]?.startOffsetMs = Double(started - target) / 1000
+            case let .failure(error): results[id]?.error = "Read start: \(error.localizedDescription)"
+            }
+        }
+        return ordered(results, jobs)
+    }
+
+    private func forEachJob<T: Sendable>(
+        _ jobs: [CoordinationJob],
+        _ body: @escaping @Sendable (CoordinationJob) async throws -> T
+    ) async -> [(AxisModel.ID, Result<T, Error>)] {
+        await withTaskGroup(of: (AxisModel.ID, Result<T, Error>).self) { group in
+            for job in jobs {
+                group.addTask {
+                    do {
+                        return (job.id, .success(try await body(job)))
+                    } catch {
+                        return (job.id, .failure(error))
+                    }
+                }
+            }
+            var outcomes: [(AxisModel.ID, Result<T, Error>)] = []
+            for await outcome in group {
+                outcomes.append(outcome)
+            }
+            return outcomes
+        }
+    }
+
+    private func ordered(
+        _ results: [AxisModel.ID: CoordinatedResult],
+        _ jobs: [CoordinationJob]
+    ) -> [CoordinatedResult] {
+        jobs.compactMap { results[$0.id] }
+    }
+
     func stopAll() {
         for axis in axes where axis.isConnected {
             axis.stop()
@@ -93,4 +171,21 @@ final class Workspace {
             break
         }
     }
+}
+
+private struct CoordinationJob: Sendable {
+    let id: AxisModel.ID
+    let name: String
+    let steps: Int32
+    let link: AxisLink
+}
+
+struct CoordinatedResult: Identifiable, Sendable {
+    let id: AxisModel.ID
+    let name: String
+    let steps: Int32
+    var roundTripUs: UInt32?
+    /// Actual start minus the scheduled start, as measured on the axis clock.
+    var startOffsetMs: Double?
+    var error: String?
 }

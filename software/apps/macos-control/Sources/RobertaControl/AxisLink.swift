@@ -29,6 +29,7 @@ struct AxisSnapshot: Equatable, Sendable {
     var homeSwitch: Bool
     var limitA: Bool
     var limitB: Bool
+    var startScheduled: Bool
 
     init(_ raw: roberta_axis_snapshot_t) {
         axisId = raw.axis_id
@@ -52,6 +53,7 @@ struct AxisSnapshot: Equatable, Sendable {
         homeSwitch = raw.limit_home != 0
         limitA = raw.limit_a != 0
         limitB = raw.limit_b != 0
+        startScheduled = raw.status_word & (1 << 14) != 0
     }
 }
 
@@ -131,6 +133,33 @@ actor AxisLink {
         try call {
             roberta_axis_client_set_motion_profile(client, velocity, accel, homeVelocity, $0, $1)
         }
+    }
+
+    /// The host clock that coordinated start times are expressed in.
+    static func hostClockMicroseconds() -> Int64 {
+        roberta_host_clock_us()
+    }
+
+    /// Estimates this axis's clock offset; returns the round trip in µs. The
+    /// estimate is good to about half of that.
+    func syncClock() throws -> UInt32 {
+        let client = try requireClient()
+        var roundTrip: UInt32 = 0
+        try call { roberta_axis_client_sync_clock(client, &roundTrip, $0, $1) }
+        return roundTrip
+    }
+
+    func moveBy(steps: Int32, atHostTime hostTime: Int64) throws {
+        let client = try requireClient()
+        try call { roberta_axis_client_move_by_steps_at(client, steps, hostTime, $0, $1) }
+    }
+
+    /// When the most recent move actually started, in host clock µs.
+    func lastStartHostTime() throws -> Int64 {
+        let client = try requireClient()
+        var hostTime: Int64 = 0
+        try call { roberta_axis_client_last_start_host_us(client, &hostTime, $0, $1) }
+        return hostTime
     }
 
     /// Sends a raw console line, such as "net status", and returns the reply.
