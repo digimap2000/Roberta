@@ -11,7 +11,7 @@ struct RegisterName final {
     std::string_view name;
 };
 
-constexpr std::array<RegisterName, 48> k_registers{{
+constexpr std::array<RegisterName, 55> k_registers{{
     {AxisRegister::protocol_version, "PROTOCOL_VERSION"},
     {AxisRegister::device_type, "DEVICE_TYPE"},
     {AxisRegister::axis_id, "AXIS_ID"},
@@ -60,6 +60,13 @@ constexpr std::array<RegisterName, 48> k_registers{{
     {AxisRegister::sync_watchdog_timeout_ms, "SYNC_WATCHDOG_TIMEOUT_MS"},
     {AxisRegister::sync_status_word, "SYNC_STATUS_WORD"},
     {AxisRegister::last_start_tick_us, "LAST_START_TICK_US"},
+    {AxisRegister::limit_max_velocity_steps_s, "LIMIT_MAX_VELOCITY_STEPS_S"},
+    {AxisRegister::limit_max_accel_steps_s2, "LIMIT_MAX_ACCEL_STEPS_S2"},
+    {AxisRegister::limit_max_decel_steps_s2, "LIMIT_MAX_DECEL_STEPS_S2"},
+    {AxisRegister::limit_max_jerk_steps_s3, "LIMIT_MAX_JERK_STEPS_S3"},
+    {AxisRegister::limit_quick_stop_decel_steps_s2, "LIMIT_QUICK_STOP_DECEL_STEPS_S2"},
+    {AxisRegister::motion_limits_status, "MOTION_LIMITS_STATUS"},
+    {AxisRegister::motion_smoothing_ms, "MOTION_SMOOTHING_MS"},
 }};
 
 [[nodiscard]] bool equals_ignore_case(std::string_view lhs, std::string_view rhs) noexcept

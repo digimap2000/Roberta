@@ -82,14 +82,19 @@ struct ContentView: View {
                 .help("Connections, reboots, faults and watchdog trips")
             }
             ToolbarItem(placement: .primaryAction) {
-                Button(role: .destructive) {
-                    workspace.stopAll()
+                Menu {
+                    Button("Stop All") { workspace.stopAll() }
+                    Button("Quick Stop All") { workspace.quickStopAll() }
+                    Divider()
+                    Button("Kill All (drives off)", role: .destructive) { workspace.killAll() }
                 } label: {
                     Label("Stop All", systemImage: "stop.circle.fill")
                         .labelStyle(.titleAndIcon)
+                } primaryAction: {
+                    workspace.stopAll()
                 }
                 .tint(.red)
-                .help("Stop every connected axis (⌘.)")
+                .help("Stop every axis, ramping down (⌘.). Quick stop: ⇧⌘. Kill, drives off: ⌥⌘.")
             }
         }
         .inspector(isPresented: $showingEvents) {

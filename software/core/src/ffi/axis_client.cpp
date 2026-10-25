@@ -183,9 +183,12 @@ public:
         return device_.clear_faults();
     }
 
-    [[nodiscard]] roberta::core::Status stop(bool estop)
+    [[nodiscard]] roberta::core::Status stop(std::uint8_t level)
     {
-        return device_.stop(estop);
+        if (level == ROBERTA_AXIS_KILL) {
+            return device_.kill();
+        }
+        return device_.stop(level == ROBERTA_AXIS_QUICK_STOP);
     }
 
     [[nodiscard]] roberta::core::Status home()
@@ -578,7 +581,7 @@ std::uint8_t roberta_axis_client_set_zero(
 
 std::uint8_t roberta_axis_client_stop(
     roberta_axis_client_t* client,
-    std::uint8_t estop,
+    std::uint8_t level,
     char* error_buffer,
     std::size_t error_buffer_len)
 {
@@ -586,8 +589,12 @@ std::uint8_t roberta_axis_client_stop(
         write_error(error_buffer, error_buffer_len, "axis client is null");
         return 0;
     }
+    if (level > ROBERTA_AXIS_KILL) {
+        write_error(error_buffer, error_buffer_len, "unknown stop level");
+        return 0;
+    }
 
-    const auto status = client->impl.stop(estop != 0);
+    const auto status = client->impl.stop(level);
     write_error_from_result(error_buffer, error_buffer_len, status);
     return static_cast<std::uint8_t>(status.has_value());
 }

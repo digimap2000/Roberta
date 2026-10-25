@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -86,6 +87,7 @@ protected:
             // Leave no soft limits behind on a board that is also in use.
             (void)axis_->set_limits(roberta::axis::AxisLimits{.min_steps = 0, .max_steps = 0});
             (void)service_->disable_drive();
+            (void)service_->clear_faults();
         }
     }
 
@@ -219,6 +221,8 @@ protected:
             (void)command("reg write STAGED_TARGET_VELOCITY_STEPS_S 400");
             (void)command("reg write STAGED_TARGET_ACCEL_STEPS_S2 800");
             (void)command("reg write EXECUTE_AT_TICK_US 0");
+            // Tests latch faults on purpose; don't leave them for the app.
+            (void)command("reg bitset CONTROL_WORD 128");
             transport_->close();
         }
     }
@@ -426,12 +430,15 @@ TEST_F(FirmwareHilRawConsoleTests, RejectsInvalidRegisterValuesAndLatchesFaults)
 TEST_F(FirmwareHilRawConsoleTests, RejectsUnsupportedControlActions)
 {
     require_command_contains("reg bitset CONTROL_WORD 128", "ok");
-    require_command_contains("reg bitset CONTROL_WORD 1024", "not-supported");
-    EXPECT_NE(read_register(roberta::core::AxisRegister::fault_word), 0u);
-
-    require_command_contains("reg bitset CONTROL_WORD 128", "ok");
     require_command_contains("reg bitset CONTROL_WORD 512", "not-supported");
     EXPECT_NE(read_register(roberta::core::AxisRegister::fault_word), 0u);
+}
+
+TEST_F(FirmwareHilRawConsoleTests, ReloadsSavedConfigAtRest)
+{
+    // Reload only: saving would commission this board with test values.
+    require_command_contains("reg bitset CONTROL_WORD 2048", "ok");
+    EXPECT_EQ(read_register(roberta::core::AxisRegister::fault_word), 0u);
 }
 
 TEST_F(FirmwareHilRawConsoleTests, RejectsUnsupportedControlWritesWithoutSideEffects)
@@ -441,7 +448,7 @@ TEST_F(FirmwareHilRawConsoleTests, RejectsUnsupportedControlWritesWithoutSideEff
     EXPECT_EQ(read_register(roberta::core::AxisRegister::control_word), 0u);
 
     require_command_contains("reg bitset CONTROL_WORD 128", "ok");
-    require_command_contains("reg write CONTROL_WORD 1027", "not-supported");
+    require_command_contains("reg write CONTROL_WORD 515", "not-supported");
 
     EXPECT_EQ(read_register(roberta::core::AxisRegister::control_word), 0u);
     const auto status = read_register(roberta::core::AxisRegister::status_word);
@@ -472,7 +479,7 @@ TEST_F(FirmwareHilRawConsoleTests, RejectsMovesPastConfiguredSoftLimits)
     EXPECT_NE(read_register(roberta::core::AxisRegister::fault_word) & fault_soft_limit, 0u);
 }
 
-TEST_F(FirmwareHilRawConsoleTests, AbortsMotionWhenSoftLimitBecomesActive)
+TEST_F(FirmwareHilRawConsoleTests, BrakesBackInsideWhenSoftLimitTightensUnderMotion)
 {
     require_command_contains("reg bitset CONTROL_WORD 128", "ok");
     // The limits below are absolute, so start from zero wherever earlier runs left the axis.
@@ -486,14 +493,105 @@ TEST_F(FirmwareHilRawConsoleTests, AbortsMotionWhenSoftLimitBecomesActive)
 
     std::this_thread::sleep_for(1200ms);
 
+    // Already past the new limit: the governor quick-stops within the
+    // axis's limits, then brings the move's target back inside.
     require_command_contains("reg write SOFT_LIMIT_MAX_STEPS 20", "ok");
     wait_until_not_moving();
 
-    const auto fault_word = read_register(roberta::core::AxisRegister::fault_word);
     const auto position = static_cast<std::int32_t>(
         read_register(roberta::core::AxisRegister::current_position_steps));
-    EXPECT_NE(fault_word & fault_soft_limit, 0u);
-    EXPECT_LT(position, 200);
+    EXPECT_EQ(position, 20);
+}
+
+TEST_F(FirmwareHilRawConsoleTests, QuickStopRampsDownAndKeepsTheDriveOn)
+{
+    disable_soft_limits();
+    require_command_contains("reg write STAGED_TARGET_VELOCITY_STEPS_S 400", "ok");
+    require_command_contains("reg write STAGED_TARGET_ACCEL_STEPS_S2 800", "ok");
+    require_command_contains("reg write STAGED_RELATIVE_MOVE_STEPS 4000", "ok");
+    const auto start = static_cast<std::int32_t>(
+        read_register(roberta::core::AxisRegister::current_position_steps));
+    require_command_contains("reg bitset CONTROL_WORD 8", "ok");
+    std::this_thread::sleep_for(1000ms);
+
+    require_command_contains("qstop", "ok");
+    wait_until_not_moving();
+
+    const auto travelled = static_cast<std::int32_t>(
+        read_register(roberta::core::AxisRegister::current_position_steps)) - start;
+    EXPECT_GT(travelled, 0);
+    EXPECT_LT(travelled, 4000);
+    EXPECT_NE(read_register(roberta::core::AxisRegister::status_word) & status_motor_enabled, 0u);
+    EXPECT_EQ(read_register(roberta::core::AxisRegister::last_error_code), 108u);
+}
+
+TEST_F(FirmwareHilRawConsoleTests, KillDropsTheDriveAndForgetsHome)
+{
+    static constexpr std::uint32_t status_homed = 1u << 4;
+    static constexpr std::uint32_t fault_killed = 1u << 8;
+    disable_soft_limits();
+    require_command_contains("zero", "ok");
+    require_command_contains("reg write STAGED_TARGET_VELOCITY_STEPS_S 200", "ok");
+    require_command_contains("reg write STAGED_RELATIVE_MOVE_STEPS 2000", "ok");
+    require_command_contains("reg bitset CONTROL_WORD 8", "ok");
+    std::this_thread::sleep_for(500ms);
+
+    require_command_contains("kill", "ok");
+    const auto status = read_register(roberta::core::AxisRegister::status_word);
+    EXPECT_EQ(status & status_motor_enabled, 0u);
+    EXPECT_EQ(status & status_moving, 0u);
+    EXPECT_EQ(status & status_homed, 0u);
+    EXPECT_NE(read_register(roberta::core::AxisRegister::fault_word) & fault_killed, 0u);
+    EXPECT_EQ(read_register(roberta::core::AxisRegister::last_error_code), 109u);
+}
+
+// The bug that started the motion governor: flipping a jog's direction
+// stopped the motor dead. Now velocity must ramp through zero.
+TEST_F(FirmwareHilRawConsoleTests, JogReversalRampsThroughZero)
+{
+    disable_soft_limits();
+    require_command_contains("reg write STAGED_TARGET_VELOCITY_STEPS_S 400", "ok");
+    require_command_contains("reg write STAGED_TARGET_ACCEL_STEPS_S2 800", "ok");
+    require_command_contains("reg write STAGED_RELATIVE_MOVE_STEPS 100000", "ok");
+    require_command_contains("reg bitset CONTROL_WORD 8", "ok");
+    std::this_thread::sleep_for(1500ms);
+
+    require_command_contains("reg write STAGED_RELATIVE_MOVE_STEPS -100000", "ok");
+    require_command_contains("reg bitset CONTROL_WORD 8", "ok");
+
+    // Speed may only change as fast as the 800 steps/s^2 profile allows
+    // (doubled for host timing jitter); a dead stop would drop 400 at once.
+    auto previous_time = std::chrono::steady_clock::now();
+    auto previous_speed = static_cast<double>(read_register(roberta::core::AxisRegister::current_velocity_steps_s));
+    double slowest = previous_speed;
+    for (int sample = 0; sample < 60; ++sample) {
+        std::this_thread::sleep_for(20ms);
+        const auto now = std::chrono::steady_clock::now();
+        const auto speed = static_cast<double>(read_register(roberta::core::AxisRegister::current_velocity_steps_s));
+        const double seconds = std::chrono::duration<double>(now - previous_time).count();
+        EXPECT_LE(std::fabs(speed - previous_speed), 800.0 * seconds * 2.0 + 5.0)
+            << "speed " << previous_speed << " -> " << speed << " in " << seconds << " s";
+        slowest = std::min(slowest, speed);
+        previous_time = now;
+        previous_speed = speed;
+    }
+    EXPECT_LT(slowest, 50.0);
+    require_command_contains("stop", "ok");
+    wait_until_not_moving();
+}
+
+TEST_F(FirmwareHilRawConsoleTests, MotionLimitRegistersRoundTrip)
+{
+    const auto original = read_register(roberta::core::AxisRegister::limit_max_jerk_steps_s3);
+    require_command_contains("reg write LIMIT_MAX_JERK_STEPS_S3 40000", "ok");
+    EXPECT_EQ(read_register(roberta::core::AxisRegister::limit_max_jerk_steps_s3), 40000u);
+    // At rest, new limits apply at once: 2 * quick stop decel / jerk.
+    const auto quick = read_register(roberta::core::AxisRegister::limit_quick_stop_decel_steps_s2);
+    const auto accel = read_register(roberta::core::AxisRegister::limit_max_accel_steps_s2);
+    const auto expected_ms = static_cast<std::uint32_t>(std::ceil(2000.0 * std::max(quick, accel) / 40000.0));
+    EXPECT_EQ(read_register(roberta::core::AxisRegister::motion_smoothing_ms), std::min(expected_ms, 2048u));
+    require_command_contains("reg write LIMIT_MAX_JERK_STEPS_S3 0", "invalid-value");
+    require_command_contains(std::format("reg write LIMIT_MAX_JERK_STEPS_S3 {}", original), "ok");
 }
 
 TEST_F(FirmwareHilRawConsoleTests, ReportsOnlyImplementedCapabilities)

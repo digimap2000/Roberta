@@ -55,10 +55,18 @@ distributable app.
   firmware's `diag`), faults, and link-watchdog trips. They are also appended to
   `~/Library/Logs/RobertaControl/events.log`. A reboot means the drive was
   disabled and the position counter restarted at zero.
-- **Drive**: enable or disable, home, set zero, clear faults, and STOP.
+- **Drive**: enable or disable, home, set zero, clear faults, and the three
+  stop levels: STOP (ramp down), Quick stop (ramp down at the axis's hardest
+  safe deceleration), and Kill (drive off at once, position lost). See
+  [motion-governor.md](../../../docs/axis-controller/motion-governor.md).
 - **Jog**: step-size jogs, hold-to-jog (moves while the button is held), and
   absolute go-to, which needs the axis homed or zeroed.
 - **Motion profile**: velocity, acceleration and home velocity in steps.
+  These are requests: the controller's motion governor clamps them to the
+  axis's limits.
+- **Motion limits**: commission the axis's mechanical limits (velocity,
+  acceleration, deceleration, jerk, quick-stop deceleration), then **Save to
+  axis**. Shows whether the axis is commissioned and its smoothing window.
 - **Console**: any firmware console command, such as `net status`,
   `reg dump` or `help`.
 - **Move Together** (toolbar, or Motion ▸ Move Together… ⇧⌘M, with two or
@@ -72,7 +80,9 @@ distributable app.
   lowest-numbered joints with drives enabled sing it as a round, using step
   rate as pitch. Stop All or ⌘. stops the song; each axis's profile is put
   back afterwards.
-- **⌘.**, or **Stop All** in the toolbar, stops every connected axis.
+- **⌘.**, or **Stop All** in the toolbar, stops every connected axis. Its
+  menu, and the Motion menu, also have **Quick Stop All** (⇧⌘.) and **Kill
+  All** (⌥⌘., drives off).
 
 ## Without Hardware
 
@@ -84,7 +94,9 @@ python3 software/tools/dev/fake_axis.py --name sim-j1
 python3 software/tools/dev/fake_axis.py --name sim-j2 --port 7301
 ```
 
-Each simulated axis starts its clock at a random offset, as real boards do,
+The fake runs the firmware's own motion governor (`axis_motion.c`, compiled
+on first run with `cc` and loaded through ctypes), so it moves exactly as a
+board does. Each simulated axis starts its clock at a random offset, as real boards do,
 so Move Together exercises the clock sync. `diag panic` on a fake drops its
 links, stays away for 3 s, and comes back as a freshly booted board reporting
 the panic, which exercises reconnection and the Events log. Add

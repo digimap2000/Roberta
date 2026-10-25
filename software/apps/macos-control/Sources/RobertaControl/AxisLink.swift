@@ -1,6 +1,18 @@
 import CRobertaFFI
 import Foundation
 
+/// How hard to stop. Every level but kill goes through the controller's
+/// motion governor, so the arm is ramped down within its limits.
+enum StopLevel: UInt8 {
+    /// Ramp down at the move's own deceleration, then hold.
+    case stop = 0
+    /// Ramp down at the axis's quick-stop deceleration, then hold.
+    case quick = 1
+    /// Drive off at once. The joint is no longer held and the position is
+    /// lost: for emergencies, alongside the hardware e-stop.
+    case kill = 2
+}
+
 struct AxisError: LocalizedError {
     let message: String
 
@@ -105,9 +117,9 @@ actor AxisLink {
         try call { roberta_axis_client_disable_drive(client, $0, $1) }
     }
 
-    func stop(estop: Bool = false) throws {
+    func stop(_ level: StopLevel = .stop) throws {
         let client = try requireClient()
-        try call { roberta_axis_client_stop(client, estop ? 1 : 0, $0, $1) }
+        try call { roberta_axis_client_stop(client, level.rawValue, $0, $1) }
     }
 
     func home() throws {

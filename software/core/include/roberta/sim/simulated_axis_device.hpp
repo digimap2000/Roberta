@@ -33,6 +33,7 @@ public:
     roberta::core::Status move_to_joint_degrees(double target_degrees, roberta::axis::ScheduledAxisAction action = {}) override;
     roberta::core::Status home(roberta::axis::ScheduledAxisAction action = {}) override;
     roberta::core::Status stop(bool estop = false) override;
+    roberta::core::Status kill() override;
     roberta::core::Status clear_faults() override;
     roberta::core::Status set_zero() override;
     roberta::core::Status configure_axis_id(roberta::axis::AxisId axis_id) override;

@@ -62,6 +62,13 @@ enum class AxisRegister : std::uint16_t {
     sync_watchdog_timeout_ms = 0x0055,
     sync_status_word = 0x0056,
     last_start_tick_us = 0x0057,
+    limit_max_velocity_steps_s = 0x0060,
+    limit_max_accel_steps_s2 = 0x0061,
+    limit_max_decel_steps_s2 = 0x0062,
+    limit_max_jerk_steps_s3 = 0x0063,
+    limit_quick_stop_decel_steps_s2 = 0x0064,
+    motion_limits_status = 0x0065,
+    motion_smoothing_ms = 0x0066,
 };
 
 enum class ControlWord : std::uint32_t {
@@ -77,6 +84,7 @@ enum class ControlWord : std::uint32_t {
     move_joint = 1u << 9,
     save_configuration = 1u << 10,
     reload_configuration = 1u << 11,
+    kill = 1u << 12,
 };
 
 enum class StatusWord : std::uint32_t {
@@ -106,6 +114,7 @@ enum class FaultWord : std::uint32_t {
     homing_timeout = 1u << 5,
     brake_interlock_violation = 1u << 6,
     motion_aborted = 1u << 7,
+    killed = 1u << 8,
 };
 
 [[nodiscard]] std::string_view register_name(AxisRegister value) noexcept;

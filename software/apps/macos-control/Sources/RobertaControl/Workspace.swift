@@ -155,6 +155,23 @@ final class Workspace {
         }
     }
 
+    /// Every axis ramps down at its quick-stop deceleration and holds.
+    func quickStopAll() {
+        stopTune()
+        for axis in axes where axis.isConnected {
+            axis.quickStop()
+        }
+    }
+
+    /// Every drive off at once. Joints stop being held, and must be homed or
+    /// zeroed again.
+    func killAll() {
+        stopTune()
+        for axis in axes where axis.isConnected {
+            axis.kill()
+        }
+    }
+
     private func axis(for endpoint: String, name: String) -> AxisModel {
         if let existing = axes.first(where: { $0.endpoint == endpoint }) {
             return existing

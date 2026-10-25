@@ -82,9 +82,19 @@ uint8_t roberta_axis_client_set_zero(
     char* error_buffer,
     size_t error_buffer_len);
 
+// Stop levels for roberta_axis_client_stop.
+enum {
+    // Ramp down at the move's deceleration, then hold.
+    ROBERTA_AXIS_STOP = 0,
+    // Ramp down at the axis's quick-stop deceleration, then hold.
+    ROBERTA_AXIS_QUICK_STOP = 1,
+    // Drive off at once; the position is lost. Emergencies only.
+    ROBERTA_AXIS_KILL = 2,
+};
+
 uint8_t roberta_axis_client_stop(
     roberta_axis_client_t* client,
-    uint8_t estop,
+    uint8_t level,
     char* error_buffer,
     size_t error_buffer_len);
 uint8_t roberta_axis_client_home(

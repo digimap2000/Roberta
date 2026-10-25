@@ -136,11 +136,22 @@ final class AxisModel: Identifiable {
     func enableDrive() { perform("Enable") { try await $0.enableDrive() } }
     func disableDrive() { perform("Disable") { try await $0.disableDrive() } }
     func stop() { perform("Stop") { try await $0.stop() } }
+    func quickStop() { perform("Quick stop") { try await $0.stop(.quick) } }
+    func kill() {
+        events.record(.warning, axis: displayName, "killed: drive off, position lost")
+        perform("Kill") { try await $0.stop(.kill) }
+    }
     func home() { perform("Home") { try await $0.home() } }
     func clearFaults() { perform("Clear faults") { try await $0.clearFaults() } }
     func setZero() { perform("Set zero") { try await $0.setZero() } }
     func move(by steps: Int32) { perform("Jog") { try await $0.moveBy(steps: steps) } }
     func move(to steps: Int32) { perform("Go to") { try await $0.moveTo(steps: steps) } }
+
+    /// Runs an operation on the live link, for panels with their own calls.
+    func withLink(_ operation: @escaping @Sendable (AxisLink) async throws -> Void) async throws {
+        guard let link else { throw AxisError(message: "not connected") }
+        try await operation(link)
+    }
 
     func applyProfile(velocity: Int32, accel: Int32, homeVelocity: Int32) {
         perform("Motion profile") {

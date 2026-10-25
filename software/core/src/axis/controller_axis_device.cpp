@@ -239,6 +239,11 @@ roberta::core::Status ControllerAxisDevice::stop(bool estop)
     return trigger_control_bit(estop ? roberta::core::ControlWord::estop : roberta::core::ControlWord::stop);
 }
 
+roberta::core::Status ControllerAxisDevice::kill()
+{
+    return trigger_control_bit(roberta::core::ControlWord::kill);
+}
+
 roberta::core::Status ControllerAxisDevice::clear_faults()
 {
     return trigger_control_bit(roberta::core::ControlWord::clear_fault);

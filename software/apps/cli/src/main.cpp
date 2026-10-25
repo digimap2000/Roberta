@@ -48,7 +48,8 @@ void print_usage()
         << "  jog <steps>\n"
         << "  home\n"
         << "  stop\n"
-        << "  estop\n"
+        << "  estop      quick stop at the axis's limit\n"
+        << "  kill       drive off now; position lost\n"
         << "  zero\n"
         << "  clear-faults\n";
 }
@@ -237,6 +238,8 @@ roberta::core::Result<int> run_axis_command(int argc, char** argv)
         status = service.stop(false);
     } else if (command == "estop") {
         status = service.stop(true);
+    } else if (command == "kill") {
+        status = service.kill();
     } else if (command == "zero") {
         status = service.zero();
     } else if (command == "clear-faults") {

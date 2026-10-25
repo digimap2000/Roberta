@@ -79,6 +79,11 @@ roberta::core::Status ConsoleAxisDevice::stop(bool estop)
     return device_.stop(estop);
 }
 
+roberta::core::Status ConsoleAxisDevice::kill()
+{
+    return device_.kill();
+}
+
 roberta::core::Status ConsoleAxisDevice::clear_faults()
 {
     return device_.clear_faults();

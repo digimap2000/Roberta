@@ -34,6 +34,10 @@ struct RobertaControlApp: App {
                 Divider()
                 Button("Stop All Axes") { workspace.stopAll() }
                     .keyboardShortcut(".", modifiers: .command)
+                Button("Quick Stop All Axes") { workspace.quickStopAll() }
+                    .keyboardShortcut(".", modifiers: [.command, .shift])
+                Button("Kill All Axes (Drives Off)") { workspace.killAll() }
+                    .keyboardShortcut(".", modifiers: [.command, .option])
             }
         }
     }

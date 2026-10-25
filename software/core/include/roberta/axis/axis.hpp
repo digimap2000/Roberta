@@ -93,7 +93,12 @@ public:
     virtual roberta::core::Status move_by_steps(std::int32_t delta_steps, ScheduledAxisAction action = {}) = 0;
     virtual roberta::core::Status move_to_joint_degrees(double target_degrees, ScheduledAxisAction action = {}) = 0;
     virtual roberta::core::Status home(ScheduledAxisAction action = {}) = 0;
+    // Ramps down at the move's deceleration, or with estop at the axis's
+    // quick-stop deceleration; either way the drive holds position after.
     virtual roberta::core::Status stop(bool estop = false) = 0;
+    // Drive off at once: the joint is no longer held and the position is
+    // no longer trusted. For emergencies only.
+    virtual roberta::core::Status kill() = 0;
     virtual roberta::core::Status clear_faults() = 0;
     virtual roberta::core::Status set_zero() = 0;
     virtual roberta::core::Status configure_axis_id(AxisId axis_id) = 0;

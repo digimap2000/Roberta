@@ -60,6 +60,11 @@ roberta::core::Status SingleAxisService::home()
     return axis_->home();
 }
 
+roberta::core::Status SingleAxisService::kill()
+{
+    return axis_->kill();
+}
+
 roberta::core::Status SingleAxisService::stop(bool estop)
 {
     return axis_->stop(estop);

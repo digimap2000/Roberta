@@ -178,6 +178,18 @@ roberta::core::Status SimulatedAxisDevice::stop(bool estop)
     return roberta::core::ok_status();
 }
 
+roberta::core::Status SimulatedAxisDevice::kill()
+{
+    pending_move_.reset();
+    current_velocity_steps_per_second_ = 0.0;
+    motor_enabled_ = false;
+    homed_ = false;
+    fault_word_ |= roberta::core::to_underlying(roberta::core::FaultWord::killed);
+    lifecycle_ = roberta::axis::AxisLifecycleState::faulted;
+    status_word_ = make_status_word(outputs_enabled_, motor_enabled_, false, false, homed_);
+    return roberta::core::ok_status();
+}
+
 roberta::core::Status SimulatedAxisDevice::clear_faults()
 {
     fault_word_ = 0;

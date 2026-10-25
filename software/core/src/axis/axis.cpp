@@ -37,7 +37,8 @@ AxisFaultCategory classify_fault(std::uint32_t fault_word) noexcept
         roberta::core::to_underlying(roberta::core::FaultWord::invalid_command)
         | roberta::core::to_underlying(roberta::core::FaultWord::motion_requested_while_disabled)
         | roberta::core::to_underlying(roberta::core::FaultWord::move_requested_before_homed)
-        | roberta::core::to_underlying(roberta::core::FaultWord::motion_aborted);
+        | roberta::core::to_underlying(roberta::core::FaultWord::motion_aborted)
+        | roberta::core::to_underlying(roberta::core::FaultWord::killed);
 
     return (fault_word & ~recoverable_mask) == 0 ? AxisFaultCategory::recoverable : AxisFaultCategory::non_recoverable;
 }

@@ -20,6 +20,7 @@ public:
     roberta::core::Status jog_steps(std::int32_t delta_steps);
     roberta::core::Status home();
     roberta::core::Status stop(bool estop = false);
+    roberta::core::Status kill();
     roberta::core::Status clear_faults();
     roberta::core::Status zero();
 

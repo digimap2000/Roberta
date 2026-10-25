@@ -17,6 +17,7 @@ struct AxisDetailView: View {
                     DrivePanel(axis: axis)
                     JogPanel(axis: axis)
                     ProfilePanel(axis: axis)
+                    LimitsPanel(axis: axis)
                     ConsolePanel(axis: axis)
                 }
             }
@@ -142,12 +143,17 @@ private struct DrivePanel: View {
                     .help("Call the current position zero and mark the axis homed")
                 Button("Clear faults") { axis.clearFaults() }
                 Spacer()
+                Button("Kill", role: .destructive) { axis.kill() }
+                    .help("Drive off at once: the joint is no longer held and the position is lost. Emergencies only.")
+                Button("Quick stop") { axis.quickStop() }
+                    .help("Ramp down at this axis's quick-stop deceleration, then hold")
                 Button(role: .destructive) {
                     axis.stop()
                 } label: {
                     Label("STOP", systemImage: "stop.fill")
                 }
                 .buttonStyle(StopButtonStyle())
+                .help("Ramp down at the move's deceleration, then hold")
             }
             .padding(6)
         }
@@ -265,6 +271,114 @@ private struct ProfilePanel: View {
         velocity = "\(snapshot.profileVelocity)"
         accel = "\(snapshot.profileAccel)"
         homeVelocity = "\(snapshot.profileHomeVelocity)"
+    }
+}
+
+/// Commissioning: the governor's mechanical limits for this axis. Requests
+/// can ask for gentler motion, never harsher.
+private struct LimitsPanel: View {
+    let axis: AxisModel
+
+    @State private var fields = ["", "", "", "", ""]
+    @State private var loaded: MotionLimits?
+    @State private var message: String?
+
+    private let titles = [
+        "Max velocity (steps/s)",
+        "Max accel (steps/s²)",
+        "Max decel (steps/s²)",
+        "Max jerk (steps/s³)",
+        "Quick-stop decel (steps/s²)",
+    ]
+
+    var body: some View {
+        GroupBox("Motion limits") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 12) {
+                    ForEach(0..<5, id: \.self) { index in
+                        LabeledField(title: titles[index], text: $fields[index])
+                    }
+                }
+                HStack(spacing: 10) {
+                    Button("Apply", action: apply)
+                        .disabled(edited == nil)
+                        .help("Takes effect when the axis is next at rest")
+                    Button("Save to axis", action: save)
+                        .help("Keep these limits, the soft limits and home offset across reboots")
+                    Button("Reload", action: load)
+                    Spacer()
+                    if let loaded {
+                        Text(summary(loaded))
+                            .font(.caption)
+                            .foregroundStyle(loaded.commissioned && !loaded.adjusted ? Color.secondary : Color.orange)
+                    }
+                }
+                if let message {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .padding(6)
+        }
+        .onAppear(perform: load)
+    }
+
+    private var edited: MotionLimits? {
+        let values = fields.compactMap { Int($0) }.filter { $0 > 0 }
+        guard values.count == 5 else { return nil }
+        return MotionLimits(velocity: values[0], accel: values[1], decel: values[2], jerk: values[3],
+                            quickStopDecel: values[4])
+    }
+
+    private func summary(_ limits: MotionLimits) -> String {
+        var parts = [limits.commissioned ? "Saved on axis" : "Not commissioned: defaults in force"]
+        if limits.adjusted {
+            parts.append("adjusted by the controller to be usable")
+        }
+        parts.append("smoothing \(limits.smoothingMs) ms")
+        return parts.joined(separator: " · ")
+    }
+
+    private func load() {
+        run("Reload") { link in
+            let limits = try await link.motionLimits()
+            await MainActor.run {
+                loaded = limits
+                fields = limits.values.map(String.init)
+            }
+        }
+    }
+
+    private func apply() {
+        guard let limits = edited else { return }
+        run("Apply") { link in
+            try await link.setMotionLimits(limits)
+            let reread = try await link.motionLimits()
+            await MainActor.run {
+                loaded = reread
+                message = "Applied; they take effect when the axis is next at rest."
+            }
+        }
+    }
+
+    private func save() {
+        run("Save") { link in
+            try await link.saveAxisConfig()
+            let reread = try await link.motionLimits()
+            await MainActor.run {
+                loaded = reread
+                message = "Saved to the axis."
+            }
+        }
+    }
+
+    private func run(_ label: String, _ operation: @escaping @Sendable (AxisLink) async throws -> Void) {
+        Task {
+            do {
+                try await axis.withLink(operation)
+            } catch {
+                await MainActor.run { message = "\(label): \(error.localizedDescription)" }
+            }
+        }
     }
 }
 

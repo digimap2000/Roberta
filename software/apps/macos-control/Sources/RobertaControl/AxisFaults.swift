@@ -22,6 +22,11 @@ enum AxisFaults {
         105: "Move refused: limit switch active in that direction",
         106: "Scheduled start refused: start time had already passed",
         107: "Scheduled start refused: start time too far ahead",
+        108: "Quick stopped",
+        109: "Killed: drive off, position lost (home or zero again)",
+        110: "Config refused: axis is moving",
+        111: "Config could not be written to flash",
+        112: "Quick stopped: controller main loop stalled",
     ]
 
     private static let faultNames = [
@@ -33,5 +38,6 @@ enum AxisFaults {
         "Homing timeout",
         "Brake interlock",
         "Motion aborted",
+        "Killed",
     ]
 }
