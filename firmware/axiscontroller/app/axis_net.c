@@ -20,9 +20,10 @@
 enum {
     REG_CONTROL_WORD = 0x0010,
     REG_STATUS_WORD = 0x0011,
-    CONTROL_STOP = 1u << 5,
+    CONTROL_ESTOP = 1u << 6,
     STATUS_MOVING = 1u << 2,
     STATUS_HOMING = 1u << 3,
+    STATUS_START_SCHEDULED = 1u << 14,
 };
 
 enum {
@@ -286,12 +287,12 @@ static void trip_watchdog(const char *reason)
 
     g_watchdog_armed = false;
     axis_registers_read(REG_STATUS_WORD, &status_word);
-    if ((status_word & (STATUS_MOVING | STATUS_HOMING)) == 0) {
+    if ((status_word & (STATUS_MOVING | STATUS_HOMING | STATUS_START_SCHEDULED)) == 0) {
         return;
     }
 
-    // Stop motion but keep the drive enabled so the joint holds position.
-    axis_registers_bit_set(REG_CONTROL_WORD, CONTROL_STOP);
+    // Quick stop, keeping the drive enabled so the joint holds position.
+    axis_registers_bit_set(REG_CONTROL_WORD, CONTROL_ESTOP);
     g_watchdog_trips++;
     printf("net watchdog: %s, motion stopped\r\n", reason);
 }

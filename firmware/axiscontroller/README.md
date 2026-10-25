@@ -87,7 +87,9 @@ or:
    drive.
 
 5. **First motion.** With the motor free or decoupled, keep the default
-   profile (400 steps/s, 800 steps/s²) and jog ±100 steps. Check that the
+   profile (400 steps/s, 800 steps/s²) and jog ±100 steps. Until the axis is
+   commissioned, the motion governor also holds it to gentle default limits
+   (see [motion-governor.md](../../docs/axis-controller/motion-governor.md)). Check that the
    direction matches the joint convention, then try a hold-to-jog. At the
    driver's microstep setting, 400 steps/s may be slow. Raise it in the Motion
    profile panel.
@@ -96,22 +98,29 @@ or:
    quit the app or turn off the Mac's WiFi. The axis should stop within about
    a second, and `net status` should show `trips=1`.
 
-## Step Timing
+## Motion And Step Timing
 
-Motion runs in a 50 µs hardware-timer interrupt at the highest priority, so
-WiFi and console traffic can't disturb step spacing. Step pulses are 5 µs, the
-CL57T's minimum is 2.5 µs, and the step rate is capped at 20,000 steps/s. After
-a direction change the next step waits one tick so DIR settles first.
+All motion passes through the motion governor, which keeps every axis within
+its commissioned velocity, acceleration and jerk limits. The governor also
+defines the stop levels: stop, quick stop and kill. See
+[motion-governor.md](../../docs/axis-controller/motion-governor.md).
 
-`STOP` (from the app's STOP, Stop All, releasing hold-to-jog, or the link
-watchdog) decelerates at the configured acceleration, so an arm's momentum is
-ramped down. ESTOP, a hard limit switch, and running into a soft limit halt
-immediately instead, because travelling further would be worse.
+The governor runs every 1 ms in its own interrupt. A 50 µs hardware-timer
+interrupt at the highest priority follows its output, interpolating each
+millisecond so steps stay evenly spaced. WiFi and console traffic can't
+disturb either. Step pulses are 5 µs, the CL57T's minimum is 2.5 µs, and the
+step rate is capped at 20,000 steps/s. After a direction change the next step
+waits one tick so DIR settles first.
 
-`diag timing` reports the steps emitted since the last `diag timing reset`, how
-many came out a full step period late, the longest gap between motion ticks,
-and the largest step backlog. A healthy run shows `late=0` and a gap close to
-50 µs.
+`diag timing` reports:
+
+- the steps emitted since the last `diag timing reset`
+- how many came out a full step period late
+- the longest gap between motion ticks
+- the largest step backlog
+- `late_segments`: milliseconds the governor failed to deliver in time
+
+A healthy run shows `late=0`, `late_segments=0`, and a gap close to 50 µs.
 
 ## Watchdog And Crash Diagnostics
 
@@ -142,8 +151,8 @@ Look up a fault address with
 
 - Degree readouts use `STEPS_PER_MOTOR_REV` and the gear-ratio registers. They
   default to 200 steps per revolution at 1:1 and are not yet persisted
-  (`CONTROL_SAVE_CONFIG` is unsupported). Set them per session with
-  `reg write`.
+  (`CONTROL_SAVE_CONFIG` stores only the motion limits, soft limits and home
+  offset). Set them per session with `reg write`.
 - The firmware-side HIL suite can run over WiFi. Set
   `ROBERTA_HIL_AXIS_URL=tcp://roberta-j1.local` before running
   `roberta_firmware_hil_tests`.

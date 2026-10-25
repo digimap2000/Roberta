@@ -1,8 +1,10 @@
 # app layer
 add_library(app STATIC
+    axis_config.c
     axis_console.c
     axis_diag.c
     axis_hw.c
+    axis_motion.c
     axis_net.c
     axis_registers.c
     axis_service.c

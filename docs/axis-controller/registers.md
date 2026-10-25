@@ -84,6 +84,13 @@ Joint-space angle registers use signed `Q12.20` degrees stored in `i32`.
 | `0x0055` | `SYNC_WATCHDOG_TIMEOUT_MS` | `u32` | `RW` | Timeout for sync-loss shutdown. Default `100`. |
 | `0x0056` | `SYNC_STATUS_WORD` | `u32` | `RO` | Distributed time-sync state bits. |
 | `0x0057` | `LAST_START_TICK_US` | `u32` | `RO` | Local tick at which the most recent move or home actually started. |
+| `0x0060` | `LIMIT_MAX_VELOCITY_STEPS_S` | `u32` | `RW` | Motion governor: the axis's top speed. |
+| `0x0061` | `LIMIT_MAX_ACCEL_STEPS_S2` | `u32` | `RW` | Motion governor: hardest acceleration when speeding up. |
+| `0x0062` | `LIMIT_MAX_DECEL_STEPS_S2` | `u32` | `RW` | Motion governor: hardest deceleration in normal motion. |
+| `0x0063` | `LIMIT_MAX_JERK_STEPS_S3` | `u32` | `RW` | Motion governor: fastest change of acceleration. |
+| `0x0064` | `LIMIT_QUICK_STOP_DECEL_STEPS_S2` | `u32` | `RW` | Motion governor: deceleration for quick stops. |
+| `0x0065` | `MOTION_LIMITS_STATUS` | `u32` | `RO` | Bit 0: limits saved on the axis. Bit 1: limits adjusted to be usable. |
+| `0x0066` | `MOTION_SMOOTHING_MS` | `u32` | `RO` | Governor smoothing window for the limits in force. |
 
 ## Identity And Capability
 
@@ -111,7 +118,7 @@ Joint-space angle registers use signed `Q12.20` degrees stored in `i32`.
 
 | Register | Type | Access | Description |
 | --- | --- | --- | --- |
-| `CONTROL_WORD` | `u32` | `RW` | Main command and state-request bits. Bits `2..11` are write-one action bits. Bits `0..1` remain level-representative. Action bits consume staged registers atomically. |
+| `CONTROL_WORD` | `u32` | `RW` | Main command and state-request bits. Bits `2..12` are write-one action bits. Bits `0..1` remain level-representative. Action bits consume staged registers atomically. |
 | `STATUS_WORD` | `u32` | `RO` | Main controller state bits. |
 | `FAULT_WORD` | `u32` | `RO` | Fault and rejection bits. |
 | `MODE_WORD` | `u32` | `RW` | Motion/control mode selection. |
@@ -127,13 +134,25 @@ Joint-space angle registers use signed `Q12.20` degrees stored in `i32`.
 | `2` | Start absolute move using `STAGED_TARGET_POSITION_STEPS` |
 | `3` | Start relative move using `STAGED_RELATIVE_MOVE_STEPS` |
 | `4` | Start homing |
-| `5` | Stop motion: decelerate to rest at the active acceleration |
-| `6` | Emergency stop: halt immediately and latch a fault |
+| `5` | Stop: ramp down at the move's deceleration, then hold |
+| `6` | Quick stop: ramp down at `LIMIT_QUICK_STOP_DECEL_STEPS_S2`, hold, and latch `Motion aborted` (error `108`) |
 | `7` | Clear fault |
 | `8` | Set current position to zero |
 | `9` | Apply `STAGED_JOINT_TARGET_DEG_Q12_20` by converting into step space |
-| `10` | Persist current writable configuration registers to non-volatile storage |
-| `11` | Reload saved configuration into the live writable configuration registers |
+| `10` | Save the motion limits, soft limits and home offset to flash. Refused while moving, homing or with a start scheduled (error `110`), because flash writes pause the motion interrupts |
+| `11` | Reload the saved configuration (defaults if none was saved). Refused while moving, homing or with a start scheduled |
+| `12` | Kill: motor enable off at once, homed cleared, latch `Killed` (error `109`). Overrides bit `1` in the same write |
+
+Every stop but kill goes through the motion governor
+([motion-governor.md](motion-governor.md)), so the drive train only ever sees
+motion within the axis's commissioned limits. Dropping bit `0` or `1` while
+the axis moves quick-stops it first and drops the enable once it is at rest.
+Moving into an active limit switch quick-stops the axis and latches
+`Unexpected limit hit`. Soft limits are enforced by the governor braking
+before them, so they never latch a fault during motion; moves whose target is
+past one are still refused. A soft-limit pair written with min above max is
+taken as half-way through a change: the previous pair stays in force until
+the other register is written.
 
 ### `STATUS_WORD` Bits
 
@@ -166,7 +185,8 @@ Joint-space angle registers use signed `Q12.20` degrees stored in `i32`.
 | `4` | Unexpected limit hit |
 | `5` | Homing timeout |
 | `6` | Brake interlock violation |
-| `7` | Motion aborted |
+| `7` | Motion aborted (quick stop) |
+| `8` | Killed |
 
 ### `MODE_WORD` Values
 
@@ -256,6 +276,28 @@ Joint-space angle registers use signed `Q12.20` degrees stored in `i32`.
 | `SYNC_STATUS_WORD` | `u32` | `RO` | Distributed time-sync state bits. |
 | `LAST_START_TICK_US` | `u32` | `RO` | Local tick at which the most recent move or home actually started. Hosts convert it back to their own clock to measure how closely scheduled starts lined up across axes. |
 
+## Motion Limits
+
+Commissioned per axis: they encode what the joint's motor, gears and moving
+mass can take. Requests may ask for gentler motion than these, never
+harsher. Writes take effect when the axis is next at rest; `CONTROL_WORD`
+bit `10` keeps them across reboots. An uncommissioned axis uses conservative
+defaults.
+
+| Register | Uncommissioned default |
+| --- | --- |
+| `LIMIT_MAX_VELOCITY_STEPS_S` | `2000` |
+| `LIMIT_MAX_ACCEL_STEPS_S2` | `4000` |
+| `LIMIT_MAX_DECEL_STEPS_S2` | `4000` |
+| `LIMIT_MAX_JERK_STEPS_S3` | `80000` |
+| `LIMIT_QUICK_STOP_DECEL_STEPS_S2` | `8000` |
+
+The registers read back as written. The governor works from a sanitised copy:
+every value at least `1`, velocity at most `20000`, quick-stop deceleration at
+least the deceleration, and acceleration and decelerations scaled down if the
+smoothing window, `2 * max(accel, quick stop) / jerk`, would exceed 2048 ms.
+`MOTION_LIMITS_STATUS` bit 1 is set when that copy differs.
+
 ### `SYNC_STATUS_WORD` Bits
 
 | Bit | Meaning |
@@ -290,6 +332,9 @@ Joint-space angle registers use signed `Q12.20` degrees stored in `i32`.
 | `enable on|off` | `CONTROL_WORD.bit1` |
 | `outputs on|off` | `CONTROL_WORD.bit0` |
 | `zero` | `CONTROL_WORD.bit8` |
+| `stop` | `CONTROL_WORD.bit5` |
+| `qstop` | `CONTROL_WORD.bit6` |
+| `kill` | `CONTROL_WORD.bit12` |
 | `home` | `CONTROL_WORD.bit4` |
 | `goto N` | Write `STAGED_TARGET_POSITION_STEPS`, then set `CONTROL_WORD.bit2` |
 | `move N` | Write `STAGED_RELATIVE_MOVE_STEPS`, then set `CONTROL_WORD.bit3` |

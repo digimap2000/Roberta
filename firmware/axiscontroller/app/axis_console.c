@@ -34,7 +34,9 @@ enum {
     CONTROL_MOVE_RELATIVE = 1u << 3,
     CONTROL_HOME = 1u << 4,
     CONTROL_STOP = 1u << 5,
+    CONTROL_ESTOP = 1u << 6,
     CONTROL_SET_ZERO = 1u << 8,
+    CONTROL_KILL = 1u << 12,
     STATUS_OUTPUTS_ENABLED = 1u << 0,
     STATUS_MOTOR_ENABLED = 1u << 1,
     STATUS_MOVING = 1u << 2,
@@ -190,7 +192,8 @@ static void print_register_value(uint16_t address)
 static void print_help(void)
 {
     console_printf("commands: help status reg read <addr|name> reg readm <addr|name>... reg write <addr|name> <value> reg bitset <addr|name> <mask> reg bitclear <addr|name> <mask> reg dump\r\n");
-    console_printf("aliases: echo on|off enable on|off outputs on|off zero home goto <steps> move <steps> vel <sps> accel <sps2> stop\r\n");
+    console_printf("aliases: echo on|off enable on|off outputs on|off zero home goto <steps> move <steps> vel <sps> accel <sps2> stop qstop kill\r\n");
+    console_printf("stops: stop (ramp down at the move's deceleration) qstop (quick stop at the axis's limit) kill (drive off now, position lost)\r\n");
     console_printf("diagnostics: diag (why the last reset happened) diag timing [reset] (step jitter) diag hang diag fault diag panic (test the watchdog)\r\n");
     console_printf("network: ping net [status] net scan net ssid <ssid> net pass <password> net name <name> net save net forget net watchdog <ms>\r\n");
 }
@@ -263,6 +266,9 @@ static void handle_net_command(char *save)
         } else {
             console_printf("usage: net name <letters, digits, hyphens>\r\n");
         }
+    } else if ((strcmp(subcommand, "save") == 0 || strcmp(subcommand, "forget") == 0) && axis_service_busy()) {
+        // Flash writes stop the motion interrupts.
+        console_printf("refused: axis is moving or has a start scheduled\r\n");
     } else if (strcmp(subcommand, "save") == 0) {
         console_printf(axis_net_apply_settings(true) ? "saved, reconnecting\r\n" : "save failed\r\n");
     } else if (strcmp(subcommand, "forget") == 0) {
@@ -509,12 +515,13 @@ static void handle_line(char *line)
                 axis_service_reset_timing();
             }
             axis_service_get_timing(&stats);
-            console_printf("timing steps=%lu late=%lu max_gap_us=%lu max_backlog=%lu.%03lu\r\n",
+            console_printf("timing steps=%lu late=%lu max_gap_us=%lu max_backlog=%lu.%03lu late_segments=%lu\r\n",
                            (unsigned long)stats.steps,
                            (unsigned long)stats.late_steps,
                            (unsigned long)stats.max_tick_gap_us,
                            (unsigned long)(stats.max_backlog_milli_steps / 1000u),
-                           (unsigned long)(stats.max_backlog_milli_steps % 1000u));
+                           (unsigned long)(stats.max_backlog_milli_steps % 1000u),
+                           (unsigned long)stats.late_segments);
             print_prompt();
             return;
         }
@@ -541,8 +548,9 @@ static void handle_line(char *line)
         return;
     }
 
-    if (strcmp(command, "stop") == 0) {
-        print_register_result(axis_registers_bit_set(REG_CONTROL_WORD, CONTROL_STOP));
+    if (strcmp(command, "stop") == 0 || strcmp(command, "qstop") == 0 || strcmp(command, "kill") == 0) {
+        const uint32_t stop = command[0] == 's' ? CONTROL_STOP : (command[0] == 'q' ? CONTROL_ESTOP : CONTROL_KILL);
+        print_register_result(axis_registers_bit_set(REG_CONTROL_WORD, stop));
         print_prompt();
         return;
     }

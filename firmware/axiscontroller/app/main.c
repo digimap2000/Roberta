@@ -30,6 +30,7 @@ int main(void)
         axis_net_poll(now_us);
         axis_diag_mark(AXIS_DIAG_PHASE_IDLE);
         axis_diag_feed();
+        axis_service_heartbeat();
         sleep_us(50);
     }
 }

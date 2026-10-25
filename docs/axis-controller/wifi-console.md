@@ -46,8 +46,10 @@ moving or homing:
 - the client disconnects or is replaced
 - the WiFi link drops
 
-Tripping issues a normal `STOP`, which decelerates at the configured
-acceleration rather than stopping dead. The drive stays enabled so the joint
+Tripping issues a quick stop, which ramps down at the axis's quick-stop
+deceleration within its limits
+([motion-governor.md](motion-governor.md)) rather than stopping dead, and
+latches `Motion aborted`. The drive stays enabled so the joint
 keeps holding torque. A gravity-loaded joint would drop if it de-energised. The trip
 is counted in `net status`.
 

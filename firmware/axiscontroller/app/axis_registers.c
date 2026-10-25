@@ -1,5 +1,6 @@
 #include "axis_registers.h"
 
+#include "axis_config.h"
 #include "axis_hw.h"
 #include "axis_service.h"
 
@@ -59,6 +60,14 @@ enum {
     REG_SYNC_WATCHDOG_TIMEOUT_MS = 0x0055,
     REG_SYNC_STATUS_WORD = 0x0056,
     REG_LAST_START_TICK_US = 0x0057,
+    // The motion governor's mechanical limits for this axis.
+    REG_LIMIT_MAX_VELOCITY_STEPS_S = 0x0060,
+    REG_LIMIT_MAX_ACCEL_STEPS_S2 = 0x0061,
+    REG_LIMIT_MAX_DECEL_STEPS_S2 = 0x0062,
+    REG_LIMIT_MAX_JERK_STEPS_S3 = 0x0063,
+    REG_LIMIT_QUICK_STOP_DECEL_STEPS_S2 = 0x0064,
+    REG_MOTION_LIMITS_STATUS = 0x0065,
+    REG_MOTION_SMOOTHING_MS = 0x0066,
 };
 
 enum {
@@ -84,8 +93,9 @@ enum {
     CONTROL_MOVE_JOINT = 1u << 9,
     CONTROL_SAVE_CONFIG = 1u << 10,
     CONTROL_RELOAD_CONFIG = 1u << 11,
+    CONTROL_KILL = 1u << 12,
     CONTROL_LEVEL_MASK = CONTROL_OUTPUT_ENABLE | CONTROL_MOTOR_ENABLE,
-    CONTROL_ACTION_MASK = 0x0ffcu,
+    CONTROL_ACTION_MASK = 0x1ffcu,
 };
 
 enum {
@@ -115,6 +125,12 @@ enum {
     FAULT_HOMING_TIMEOUT = 1u << 5,
     FAULT_BRAKE_INTERLOCK = 1u << 6,
     FAULT_MOTION_ABORTED = 1u << 7,
+    FAULT_KILLED = 1u << 8,
+};
+
+enum {
+    MOTION_LIMITS_COMMISSIONED = 1u << 0,
+    MOTION_LIMITS_ADJUSTED = 1u << 1,
 };
 
 enum {
@@ -146,6 +162,11 @@ enum {
     ERROR_LIMIT_ACTIVE = 105,
     ERROR_SCHEDULE_LATE = 106,
     ERROR_SCHEDULE_TOO_FAR = 107,
+    ERROR_QUICK_STOPPED = 108,
+    ERROR_KILLED = 109,
+    ERROR_CONFIG_WHILE_MOVING = 110,
+    ERROR_CONFIG_FLASH = 111,
+    ERROR_MAIN_LOOP_STALLED = 112,
     // Scheduled starts further ahead than this are refused, which also
     // catches ticks computed from a stale or wrapped clock estimate.
     SCHEDULE_MAX_LEAD_US = 5000000,
@@ -192,6 +213,9 @@ typedef struct {
     // once it fires.
     uint32_t scheduled_motion_bits;
     uint32_t last_start_tick_us;
+    // Mechanical limits as written; the governor gets a sanitised copy.
+    AxisMotionLimits limits;
+    uint32_t motion_limits_status;
 } AxisRegisterState;
 
 static AxisRegisterState g_registers;
@@ -245,6 +269,13 @@ static const AxisRegisterInfo k_register_info[] = {
     {REG_SYNC_WATCHDOG_TIMEOUT_MS, "SYNC_WATCHDOG_TIMEOUT_MS", AXIS_REGISTER_ACCESS_RW},
     {REG_SYNC_STATUS_WORD, "SYNC_STATUS_WORD", AXIS_REGISTER_ACCESS_RO},
     {REG_LAST_START_TICK_US, "LAST_START_TICK_US", AXIS_REGISTER_ACCESS_RO},
+    {REG_LIMIT_MAX_VELOCITY_STEPS_S, "LIMIT_MAX_VELOCITY_STEPS_S", AXIS_REGISTER_ACCESS_RW},
+    {REG_LIMIT_MAX_ACCEL_STEPS_S2, "LIMIT_MAX_ACCEL_STEPS_S2", AXIS_REGISTER_ACCESS_RW},
+    {REG_LIMIT_MAX_DECEL_STEPS_S2, "LIMIT_MAX_DECEL_STEPS_S2", AXIS_REGISTER_ACCESS_RW},
+    {REG_LIMIT_MAX_JERK_STEPS_S3, "LIMIT_MAX_JERK_STEPS_S3", AXIS_REGISTER_ACCESS_RW},
+    {REG_LIMIT_QUICK_STOP_DECEL_STEPS_S2, "LIMIT_QUICK_STOP_DECEL_STEPS_S2", AXIS_REGISTER_ACCESS_RW},
+    {REG_MOTION_LIMITS_STATUS, "MOTION_LIMITS_STATUS", AXIS_REGISTER_ACCESS_RO},
+    {REG_MOTION_SMOOTHING_MS, "MOTION_SMOOTHING_MS", AXIS_REGISTER_ACCESS_RO},
 };
 
 static bool names_equal_ignore_case(const char *lhs, const char *rhs)
@@ -272,6 +303,74 @@ static void clear_faults(void)
     g_registers.last_error_code = 0;
 }
 
+static void apply_motion_limits(void)
+{
+    AxisMotionLimits usable = g_registers.limits;
+
+    if (axis_service_set_limits(&usable)) {
+        g_registers.motion_limits_status &= ~MOTION_LIMITS_ADJUSTED;
+    } else {
+        g_registers.motion_limits_status |= MOTION_LIMITS_ADJUSTED;
+    }
+}
+
+// Soft limits are written one register at a time. A pair with min above max
+// is half-way through a change, so the governor keeps the old pair until the
+// other half arrives; min equal to max turns them off.
+static void apply_soft_limits(void)
+{
+    if (g_registers.soft_limit_min_steps <= g_registers.soft_limit_max_steps) {
+        axis_service_set_soft_limits(g_registers.soft_limit_min_steps, g_registers.soft_limit_max_steps);
+    }
+}
+
+// Loads the saved commissioning, or conservative defaults if there is none.
+static void load_config(void)
+{
+    AxisConfig config = {
+        .limits = axis_service_default_limits(),
+        .soft_limit_min_steps = g_registers.soft_limit_min_steps,
+        .soft_limit_max_steps = g_registers.soft_limit_max_steps,
+        .home_offset_steps = g_registers.home_offset_steps,
+    };
+
+    g_registers.motion_limits_status = axis_config_load(&config) ? MOTION_LIMITS_COMMISSIONED : 0u;
+    g_registers.limits = config.limits;
+    g_registers.soft_limit_min_steps = config.soft_limit_min_steps;
+    g_registers.soft_limit_max_steps = config.soft_limit_max_steps;
+    g_registers.home_offset_steps = config.home_offset_steps;
+    apply_motion_limits();
+    apply_soft_limits();
+}
+
+static AxisRegisterResult save_config(void)
+{
+    const AxisConfig config = {
+        .limits = g_registers.limits,
+        .soft_limit_min_steps = g_registers.soft_limit_min_steps,
+        .soft_limit_max_steps = g_registers.soft_limit_max_steps,
+        .home_offset_steps = g_registers.home_offset_steps,
+    };
+
+    if (!axis_config_save(&config)) {
+        set_fault(FAULT_INVALID_COMMAND, ERROR_CONFIG_FLASH);
+        return AXIS_REGISTER_RESULT_INVALID_VALUE;
+    }
+    g_registers.motion_limits_status |= MOTION_LIMITS_COMMISSIONED;
+    return AXIS_REGISTER_RESULT_OK;
+}
+
+static AxisRegisterResult write_limit(float *limit, uint32_t value)
+{
+    if (value == 0 || value > 1000000000u) {
+        set_fault(FAULT_INVALID_COMMAND, ERROR_INVALID_WRITE);
+        return AXIS_REGISTER_RESULT_INVALID_VALUE;
+    }
+    *limit = (float)value;
+    apply_motion_limits();
+    return AXIS_REGISTER_RESULT_OK;
+}
+
 static bool soft_limits_configured(void)
 {
     return g_registers.soft_limit_min_steps < g_registers.soft_limit_max_steps;
@@ -285,19 +384,6 @@ static bool position_is_outside_soft_limits(int32_t position_steps)
 
     return position_steps < g_registers.soft_limit_min_steps ||
            position_steps > g_registers.soft_limit_max_steps;
-}
-
-static bool soft_limit_blocks_direction(int32_t position_steps, AxisDirection direction)
-{
-    if (!soft_limits_configured()) {
-        return false;
-    }
-
-    if (direction == AXIS_DIRECTION_NEGATIVE) {
-        return position_steps <= g_registers.soft_limit_min_steps;
-    }
-
-    return position_steps >= g_registers.soft_limit_max_steps;
 }
 
 static bool target_is_outside_soft_limits(int32_t target_position_steps)
@@ -599,7 +685,12 @@ static AxisRegisterResult validate_motion_request(
         }
         target_position_steps = g_registers.staged_target_position_steps;
     } else if ((action_bits & CONTROL_MOVE_RELATIVE) != 0) {
-        target_position_steps = status->current_position_steps + g_registers.staged_relative_move_steps;
+        const int64_t target = (int64_t)status->current_position_steps + g_registers.staged_relative_move_steps;
+        if (target < INT32_MIN || target > INT32_MAX) {
+            set_fault(FAULT_INVALID_COMMAND, ERROR_INVALID_WRITE);
+            return AXIS_REGISTER_RESULT_INVALID_VALUE;
+        }
+        target_position_steps = (int32_t)target;
     }
 
     if (target_is_outside_soft_limits(target_position_steps)) {
@@ -622,11 +713,16 @@ static AxisRegisterResult validate_control_word_request(
 {
     AxisRegisterResult result;
 
-    if ((action_bits & CONTROL_MOVE_JOINT) != 0 ||
-        (action_bits & CONTROL_SAVE_CONFIG) != 0 ||
-        (action_bits & CONTROL_RELOAD_CONFIG) != 0) {
+    if ((action_bits & CONTROL_MOVE_JOINT) != 0) {
         set_fault(FAULT_INVALID_COMMAND, ERROR_UNSUPPORTED);
         return AXIS_REGISTER_RESULT_NOT_SUPPORTED;
+    }
+
+    // Flash writes stop the motion interrupts, and a reload could change
+    // limits under a moving axis.
+    if ((action_bits & (CONTROL_SAVE_CONFIG | CONTROL_RELOAD_CONFIG)) != 0 && axis_service_busy()) {
+        set_fault(FAULT_INVALID_COMMAND, ERROR_CONFIG_WHILE_MOVING);
+        return AXIS_REGISTER_RESULT_INVALID_VALUE;
     }
 
     result = validate_motion_request(status, requested_levels, action_bits);
@@ -689,6 +785,18 @@ static AxisRegisterResult write_control_word(uint32_t value)
 
     axis_service_get_status(&status);
 
+    // KILL comes before everything else, and leaves the drive disabled
+    // whatever else the write asked for.
+    if (action_bits & CONTROL_KILL) {
+        cancel_scheduled_start();
+        (void)submit_command(&(AxisCommand){.type = AXIS_COMMAND_KILL});
+        requested_levels &= ~CONTROL_MOTOR_ENABLE;
+        g_registers.control_word_levels &= ~CONTROL_MOTOR_ENABLE;
+        set_fault(FAULT_KILLED, ERROR_KILLED);
+        g_registers.mode_word = MODE_IDLE;
+        axis_service_get_status(&status);
+    }
+
     result = validate_control_word_request(&status, requested_levels, action_bits);
     if (result != AXIS_REGISTER_RESULT_OK) {
         return result;
@@ -736,7 +844,7 @@ static AxisRegisterResult write_control_word(uint32_t value)
         }
     }
 
-    if (action_bits & (CONTROL_STOP | CONTROL_ESTOP)) {
+    if (action_bits & (CONTROL_STOP | CONTROL_ESTOP | CONTROL_KILL)) {
         cancel_scheduled_start();
     }
 
@@ -749,12 +857,23 @@ static AxisRegisterResult write_control_word(uint32_t value)
     }
 
     if (action_bits & CONTROL_ESTOP) {
-        result = submit_command(&(AxisCommand){.type = AXIS_COMMAND_HALT});
+        result = submit_command(&(AxisCommand){.type = AXIS_COMMAND_QUICK_STOP});
         if (result != AXIS_REGISTER_RESULT_OK) {
             return result;
         }
-        set_fault(FAULT_MOTION_ABORTED, ERROR_UNSUPPORTED);
+        set_fault(FAULT_MOTION_ABORTED, ERROR_QUICK_STOPPED);
         g_registers.mode_word = MODE_IDLE;
+    }
+
+    if (action_bits & CONTROL_RELOAD_CONFIG) {
+        load_config();
+    }
+
+    if (action_bits & CONTROL_SAVE_CONFIG) {
+        result = save_config();
+        if (result != AXIS_REGISTER_RESULT_OK) {
+            return result;
+        }
     }
 
     if (action_bits & CONTROL_SET_ZERO) {
@@ -806,6 +925,7 @@ void axis_registers_init(uint64_t now_us)
 
     axis_hw_set_fan(false);
     axis_hw_set_brake(false);
+    load_config();
 }
 
 void axis_registers_tick(uint64_t now_us)
@@ -823,21 +943,15 @@ void axis_registers_tick(uint64_t now_us)
         g_registers.scheduled_motion_bits = 0;
     }
 
-    axis_service_get_status(&status);
-    if (status.homing) {
-        return;
-    }
-
-    if (status.moving && limit_blocks_direction(status.limits, status.direction)) {
-        (void)submit_command(&(AxisCommand){.type = AXIS_COMMAND_HALT});
+    // The motion service quick-stops motion into a limit switch itself;
+    // this just reports it. Soft limits need no watching: the governor
+    // brakes so the axis never passes them.
+    if (axis_service_take_limit_stop()) {
         set_fault(FAULT_UNEXPECTED_LIMIT, ERROR_LIMIT_ACTIVE);
         g_registers.mode_word = MODE_IDLE;
-        return;
     }
-
-    if (status.moving && soft_limit_blocks_direction(status.current_position_steps, status.direction)) {
-        (void)submit_command(&(AxisCommand){.type = AXIS_COMMAND_HALT});
-        set_fault(FAULT_SOFT_LIMIT, ERROR_SOFT_LIMIT);
+    if (axis_service_take_deadman_stop()) {
+        set_fault(FAULT_MOTION_ABORTED, ERROR_MAIN_LOOP_STALLED);
         g_registers.mode_word = MODE_IDLE;
     }
 }
@@ -984,6 +1098,27 @@ AxisRegisterResult axis_registers_read(uint16_t address, uint32_t *value)
     case REG_LAST_START_TICK_US:
         *value = g_registers.last_start_tick_us;
         return AXIS_REGISTER_RESULT_OK;
+    case REG_LIMIT_MAX_VELOCITY_STEPS_S:
+        *value = (uint32_t)g_registers.limits.max_velocity;
+        return AXIS_REGISTER_RESULT_OK;
+    case REG_LIMIT_MAX_ACCEL_STEPS_S2:
+        *value = (uint32_t)g_registers.limits.max_accel;
+        return AXIS_REGISTER_RESULT_OK;
+    case REG_LIMIT_MAX_DECEL_STEPS_S2:
+        *value = (uint32_t)g_registers.limits.max_decel;
+        return AXIS_REGISTER_RESULT_OK;
+    case REG_LIMIT_MAX_JERK_STEPS_S3:
+        *value = (uint32_t)g_registers.limits.max_jerk;
+        return AXIS_REGISTER_RESULT_OK;
+    case REG_LIMIT_QUICK_STOP_DECEL_STEPS_S2:
+        *value = (uint32_t)g_registers.limits.quick_stop_decel;
+        return AXIS_REGISTER_RESULT_OK;
+    case REG_MOTION_LIMITS_STATUS:
+        *value = g_registers.motion_limits_status;
+        return AXIS_REGISTER_RESULT_OK;
+    case REG_MOTION_SMOOTHING_MS:
+        *value = (uint32_t)axis_service_window_ms();
+        return AXIS_REGISTER_RESULT_OK;
     case REG_LOCAL_TICK_US:
         // Read the timer directly: hosts estimate clock offsets from it.
         *value = local_tick_now();
@@ -1109,10 +1244,22 @@ AxisRegisterResult axis_registers_write(uint16_t address, uint32_t value)
         return AXIS_REGISTER_RESULT_OK;
     case REG_SOFT_LIMIT_MIN_STEPS:
         g_registers.soft_limit_min_steps = (int32_t)value;
+        apply_soft_limits();
         return AXIS_REGISTER_RESULT_OK;
     case REG_SOFT_LIMIT_MAX_STEPS:
         g_registers.soft_limit_max_steps = (int32_t)value;
+        apply_soft_limits();
         return AXIS_REGISTER_RESULT_OK;
+    case REG_LIMIT_MAX_VELOCITY_STEPS_S:
+        return write_limit(&g_registers.limits.max_velocity, value);
+    case REG_LIMIT_MAX_ACCEL_STEPS_S2:
+        return write_limit(&g_registers.limits.max_accel, value);
+    case REG_LIMIT_MAX_DECEL_STEPS_S2:
+        return write_limit(&g_registers.limits.max_decel, value);
+    case REG_LIMIT_MAX_JERK_STEPS_S3:
+        return write_limit(&g_registers.limits.max_jerk, value);
+    case REG_LIMIT_QUICK_STOP_DECEL_STEPS_S2:
+        return write_limit(&g_registers.limits.quick_stop_decel, value);
     case REG_STAGED_JOINT_TARGET_DEG_Q12_20:
         g_registers.staged_joint_target_deg_q12_20 = (int32_t)value;
         return AXIS_REGISTER_RESULT_OK;
